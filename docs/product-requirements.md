@@ -1,6 +1,6 @@
 # Product requirements
 
-Last verified: 2026-05-02 05:08 PM
+Last verified: 2026-05-02 07:08 PM
 Source-of-truth for: product goals, scope, user-facing rules, and decision-rich intent for implementers
 
 > Purpose: capture settled product behavior and requirements. Do not treat guesswork as decisions; record uncertainty, conflicts, and owner decisions in Open questions (`oqN.` handles). Audience: project owner, future humans, and agent implementers.
@@ -29,8 +29,12 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - A pipeline for parsing constrained 2D pixel or grid images intended to represent one or more orthographic, diagonal, or cross-section views of a voxel object.
 - Support for saved or uploaded image grids, with external image generation API support deferred.
 - Template image input grids and copy-paste prompts that users can take to their image model of choice.
+- A configurable intersecting slice/grid workspace where users can upload generated pixel images into specific slice planes and inspect the arrangement with free camera rotation.
+- Slice/grid view configuration should support various selected slice planes, not only orthogonal view slices or 45-degree slices through center mass.
 - Multi-view grid inputs covering `x`, `y`, `z`, and 45-degree diagonal or cross-section panels for experimentation.
 - A reconstruction or constraint-solving step that converts generated 2D views into a candidate 3D voxel volume.
+- A free-rotate 3D viewer for the reconstructed target voxel model, with snap-to orthogonal camera views similar to Blender.
+- Grid template configuration, validation, saving, and reuse so users can create valid templates for external image models to fill with pixel art from multiple angles.
 - A validation layer that detects impossible, ambiguous, disconnected, non-watertight, color-incoherent, or malformed voxel results.
 - Color/material assignment as part of the first validation loop.
 - Early benchmark objects with simple geometry, voxelized icons, simple props, stylized plants, and stylized animals.
@@ -42,12 +46,15 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Complex animal generation as the initial proof point.
 - Photorealistic mesh generation, rigging, animation, physics, or game-engine export polish until valid voxel construction is proven.
 - Depending on a single side view as sufficient truth for complex objects unless validation shows it works for a constrained object class.
+- Direct voxel editing or direct slice editing in the free-rotate workspace; this is a planned feature after upload, inspection, reconstruction, and validation are reliable.
 - Direct external image generation API integration in the first prototype.
 
 ### Baseline launch bar
 
 - Generate or upload at least one simple object class from constrained 2D images into a valid 3D voxel asset.
-- Show the input grid, parsed views, reconstructed voxel result, color/material preview, and validation report for each run.
+- Show the input grid, parsed views, reconstructed voxel result, color/material preview, rotatable model viewer, and validation report for each run.
+- Provide a configurable slice/grid workspace that can display uploaded pixel panels on intersecting planes, rotate freely, and snap to orthogonal views for template inspection.
+- Let users save at least one valid grid template configuration for reuse with external image model prompts.
 - Validate occupancy, watertight/connected volume, recognizable form, and coherent colors/materials.
 - Include a small benchmark set that distinguishes valid generations, invalid generations, and ambiguous generations.
 - Include a voxel sphere with a complex, colorful swirl pattern as an early benchmark.
@@ -87,9 +94,9 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 | --- | --- | --- |
 | Runtime and UI | Browser-first React/Vite/TypeScript app. | The first workflow must run locally without accounts, backend storage, or external image-generation API credentials. |
 | Voxel core | Framework-independent TypeScript modules. | Reconstruction, projection, and validation logic must be deterministic and testable without React or Three.js. |
-| Rendering | Direct Three.js voxel preview. | Rendering must visualize validated voxel data and validation overlays; it must not become the source of truth for occupancy or material state. |
+| Rendering | Direct Three.js voxel and slice-grid preview. | Rendering must visualize validated voxel data, uploaded slice planes, orthogonal snap views, free orbit controls, and validation overlays; it must not become the source of truth for occupancy, template validity, or material state. |
 | Parsing and contracts | Browser Canvas/ImageData plus typed schemas. | Uploaded image grids are untrusted inputs and must be parsed, schema-validated, and rejected with actionable errors before reconstruction when malformed. |
-| Persistence | Local JSON export/import. | Runs and benchmarks must be reproducible without a server, including schema version, source-image references, parsed panels, voxel data, material data, and validation results. |
+| Persistence | Local JSON export/import. | Runs, benchmarks, and saved grid templates must be reproducible without a server, including schema version, grid dimensions, slice/view definitions, source-image references, parsed panels, voxel data, material data, and validation results. |
 
 **Product-level constraints:**
 
@@ -115,6 +122,9 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - The operator chooses a target object class and a constraint template.
 - The system provides one or more 2D grid templates and copy-paste prompts for use in the user's image model of choice.
 - The prompt/template should encode hard boundaries, view layout, voxel scale, color/material constraints, and any symmetry or connectivity expectations.
+- The user can configure grid size and view/slice layout before saving a reusable template.
+- First-class grid size presets for saved templates are `16`, `32`, and `64`; arbitrary dimensions are planned after the preset workflow is reliable.
+- Saved templates should be valid by construction or fail with actionable template validation errors before the user sends them to an image model.
 - The first target classes are geometric solids, voxelized icons, simple props, stylized plants, and stylized animals.
 
 ### 2D generation
@@ -130,6 +140,16 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - 45-degree panels should be treated as additional experimental constraints that reduce ambiguity and expose color/material conflicts.
 - Cross-section panels, when present, should constrain interior occupancy or material on a defined slice rather than being treated as ordinary exterior views.
 
+### Slice workspace and camera controls
+
+- The UI should provide a 3D workspace that shows intersecting image planes for the configured orthographic, diagonal, or cross-section slices.
+- The slice workspace should allow users to select among multiple configured slice planes, including non-center slices; v0 should not assume all useful slices pass through center mass.
+- Users should be able to upload generated pixel images into specific slice/view slots and inspect how those panels relate spatially before or during reconstruction.
+- The slice workspace and reconstructed voxel model viewer should support free orbit rotation.
+- Camera controls should include snap-to orthogonal views, with front, side, and top required first.
+- Back, bottom, diagonal, and target-slice snap views are planned after the base camera path works.
+- Snap views must not replace free rotation; users need both fixed profile checks and arbitrary-angle inspection.
+
 ### Reconstruction
 
 - The system converts generated views into a candidate voxel volume.
@@ -140,7 +160,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 - The system reports whether the candidate is valid, invalid, or ambiguous.
 - Validation should include geometry and appearance rules appropriate to the current object class, such as recognizability, connectivity, watertightness, silhouette consistency, coherent colors/materials, unsupported floating voxels, volume bounds, and simple symmetry constraints.
-- Human review should include the source views and a rendered voxel preview.
+- Human review should include the source views, rotatable slice workspace, rendered voxel preview, snap-to orthogonal views, and validation report.
 
 ### First benchmark: swirl voxel sphere
 
@@ -152,18 +172,18 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 ## I. Data and content model (intent)
 
-- **Canonical objects:** generation run, target object class, constraint template, uploaded source grid, parsed view panel, voxel candidate, material/color assignment, validation report, benchmark case.
-- **Identity:** generation runs should be addressable by timestamp or stable run id; benchmark cases should have stable names.
+- **Canonical objects:** generation run, target object class, constraint template, saved grid template, grid size configuration, slice/view slot, uploaded source grid, parsed view panel, voxel candidate, material/color assignment, validation report, benchmark case.
+- **Identity:** generation runs should be addressable by timestamp or stable run id; saved grid templates and benchmark cases should have stable names.
 - **Ownership and boundaries:** the PRD owns product intent; future technical docs should own model choices, file formats, solver strategy, and rendering implementation.
 
 ---
 
 ## J. Output, reporting, and integration contract
 
-- **Human output:** side-by-side view of prompt/template, uploaded 2D grid, parsed view panels, voxel reconstruction, color/material preview, and validation result.
-- **Machine output:** schema version, run metadata, template id/config, source image references, parsed panel metadata, voxel volume data, material/color data, validation status, and failure reasons.
+- **Human output:** side-by-side view of prompt/template, uploaded 2D grid, parsed view panels, rotatable slice workspace, voxel reconstruction, color/material preview, snap-to profile views, and validation result.
+- **Machine output:** schema version, run metadata, template id/config, grid size configuration, slice/view slot definitions, source image references, parsed panel metadata, voxel volume data, material/color data, validation status, and failure reasons.
 - **Integration boundaries:** later exporters or game-engine integrations should consume only validated voxel candidates, not raw generated images.
-- **Persistence contract:** local JSON export/import is part of the v0 workflow so benchmark cases and failed runs can be replayed without a backend.
+- **Persistence contract:** local JSON export/import is part of the v0 workflow so grid templates, benchmark cases, and failed runs can be replayed without a backend.
 
 ---
 
@@ -173,7 +193,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Add image-generated cases only after the fixture path can pass and fail predictably.
 - Include the swirl voxel sphere as an early fixture and uploaded-grid benchmark.
 - Validate the core pipeline with deterministic unit tests before relying on browser smoke tests or visual inspection.
-- Use browser-level checks for upload flow, layout, nonblank voxel rendering, and mismatch overlays once the UI exists.
+- Use browser-level checks for upload flow, layout, nonblank voxel rendering, rotatable slice-grid rendering, snap-to camera views, saved template round trips, and mismatch overlays once the UI exists.
 - Maintain benchmark tiers:
   - Tier 1: simple geometric solids and combinations, including the swirl voxel sphere.
   - Tier 2: voxelized icons and simple props.
@@ -205,13 +225,21 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 ## Task triage
 
 tt1. [iterate] Prototype and evaluate the swirl voxel sphere benchmark with occupancy, watertight/connectivity, and color coherence checks.
-tt2. [action] Define the first multi-view grid template and JSON/Zod contract supporting `x`, `y`, `z`, and 45-degree diagonal or cross-section panels.
+tt2. [action] Define the first configurable multi-view grid template and JSON/Zod contract supporting grid sizes, saved templates, `x`, `y`, `z`, and 45-degree diagonal or cross-section panels.
 tt3. [iterate] Test whether axis-only, axis-plus-diagonal, or axis-plus-cross-section grid inputs produce the best validity rate for simple geometry.
 tt4. [risk] Animal generation may require richer constraints than side views can provide, causing attractive but structurally invalid voxel outputs.
 tt5. [deferred] Add external image generation API support after saved/uploaded image workflows and template prompts are useful.
+tt6. [action] Prototype the rotatable slice workspace and reconstructed voxel model viewer with snap-to orthogonal camera controls.
 
 ---
 
 ## Open questions
 
 No open questions.
+
+## Decisions
+
+d1. The free-rotate workspace remains upload/inspect/template-only for v0; direct voxel or slice editing is planned after reconstruction and validation are reliable.
+d2. The grid view should support various slice selections, including non-center slices, not only orthogonal view slices or 45-degree slices through center mass.
+d3. First-class saved-template grid size presets are `16`, `32`, and `64`; arbitrary dimensions are planned later.
+d4. Initial snap views are front, side, and top; back, bottom, diagonal, and target-slice snap views are planned after the base camera path works.
