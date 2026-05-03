@@ -1,6 +1,6 @@
 # Product requirements
 
-Last verified: 2026-05-03 08:31 AM PDT
+Last verified: 2026-05-03 08:49 AM PDT
 Source-of-truth for: product goals, scope, user-facing rules, and decision-rich intent for implementers
 
 > Purpose: capture settled product behavior and requirements. Do not treat guesswork as decisions; record uncertainty, conflicts, and owner decisions in Open questions (`oqN.` handles). Audience: project owner, future humans, and agent implementers.
@@ -62,10 +62,19 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 ### MVP build sequence
 
-1. Ship pregenerated downloadable grid template images for the `16`, `32`, and `64` presets, backed by the existing template schema rather than hand-made static assets.
-2. Add upload slots that map user-provided pixel-grid images to explicit template panels or signed surfaces, then validate dimensions, required slots, and panel metadata before reconstruction.
+1. Ship pregenerated downloadable square grid template images for the `16`, `32`, and `64` presets. Each template is one plain `1024 x 1024` square grid PNG, not a face-layout sheet.
+2. Add upload slots that map user-provided pixel-grid images to explicit faces or signed surfaces at the configured resolution, then validate dimensions, required slots, and panel metadata before reconstruction.
 3. Wire uploaded slot data into the existing visual-hull reconstruction path so the user can construct a first voxel model from real template images, even if the first object class is simple geometry or the swirl sphere benchmark.
 4. Keep further 3D inspection polish scoped to what the upload-to-voxel path needs: panel visibility, projected mode, conflict reporting, and enough camera/gizmo behavior to inspect whether construction worked.
+
+### Current MVP implementation state
+
+- The app exposes an Assets card with separate tabs for template downloads and uploads.
+- The Templates tab provides three plain square-grid PNG downloads: `16 x 16`, `32 x 32`, and `64 x 64`, all exported as `1024 x 1024` PNGs for consistent image-model input.
+- The grid cell sizes differ by preset inside the same canvas size: `64 px` cells for `16 x 16`, `32 px` cells for `32 x 32`, and `16 px` cells for `64 x 64`.
+- The Uploads tab provides face-specific image slots for `front`, `back`, `left`, `right`, `top`, and `bottom`, all set to the currently configured resolution of `16`, `32`, or `64`.
+- Upload parsing is not implemented yet, so the engine still cannot reconstruct a voxel model from image-generated pixel-art files.
+- The next product-critical implementation step is browser image parsing from the upload slots into `ViewPanel` data.
 
 ### Deferred decisions
 
@@ -127,8 +136,9 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 ### Experiment setup
 
 - The operator chooses a target object class and a constraint template.
-- The system provides one or more 2D grid templates and copy-paste prompts for use in the user's image model of choice.
-- The prompt/template should encode hard boundaries, view layout, voxel scale, color/material constraints, and any symmetry or connectivity expectations.
+- The system provides three square grid template PNGs for use in the user's image model of choice: `16 x 16`, `32 x 32`, and `64 x 64`.
+- All downloadable grid templates should be `1024 x 1024` PNGs because square 1024 output is a common/default image-generation target across current image models, and it divides cleanly into all three supported grid resolutions.
+- The prompt/template should encode hard grid boundaries, voxel scale, color/material constraints, and any symmetry or connectivity expectations; face assignment happens in upload slots, not in the downloadable template image.
 - The user can configure grid size and view/slice layout before saving a reusable template.
 - First-class grid size presets for saved templates are `16`, `32`, and `64`; arbitrary dimensions are planned after the preset workflow is reliable.
 - Saved templates should be valid by construction or fail with actionable template validation errors before the user sends them to an image model.
@@ -163,7 +173,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Dedicated orthogonal-view toggle and arrow controls are deprecated and should be removed cleanly once ball-joint navigation is available.
 - The 3D voxel scene should include an always-visible Blender-style navigation/orientation gizmo in the top-right of the voxel canvas. It should prioritize camera navigation behavior over object-transform behavior: drag the center/orbit ball to orbit in perspective view, click the center/orbit ball to transition into the closest signed orthographic surface view, click a signed axis target to align to that surface, and keep the main canvas orbitable afterward.
 - Dragging the middle/center of the orientation gizmo must behave as free perspective orbit/tumble, not as a constrained single-axis ring rotation. The camera should continue accepting horizontal and vertical orbit deltas across repeated drags without hitting a permanent polar lock, disabled-control state, or pan-only state.
-- The gizmo should use Blender-like polish as a reference point: `X` red, `Y` green, and `Z` blue; large clickable ball targets instead of arrowheads; labels rendered on the positive-axis balls themselves; a center orbit ball that can be grabbed/click-dragged for free perspective rotation; dimmer/opposing signed targets for the negative sides; clean hover/pressed states; and no oversized frame that competes with the voxel scene.
+- The gizmo should use Blender-like polish as a reference point: `X` red, `Y` green, and `Z` blue; large clickable ball targets instead of arrowheads; colored rotation arcs where they improve affordance; labels rendered on the positive-axis balls themselves; a center orbit ball that can be grabbed/click-dragged for free perspective rotation; dimmer/opposing signed targets for the negative sides; clean hover/pressed states; and no oversized frame that competes with the voxel scene.
 - Perspective free-rotate regressions require root-cause investigation before being closed. Known risk: forcing a camera up vector that is parallel to the active view direction can produce a degenerate camera basis and make orbit controls appear stuck, especially after front/back orthogonal transitions.
 - Frequently used 3D inspection controls, including object visibility, projected-panel visibility, voxel outline mode, projected mode, and gizmo surface navigation, should remain reachable from the voxel scene itself without requiring the user to scroll away from the canvas.
 - Canvas-local controls should be compact and modern rather than a large multi-row button block. The preferred direction is a small toolbar or clustered icon/segmented controls with concise labels, predictable pressed states, and enough hit area to operate comfortably without covering the voxel scene.
@@ -269,49 +279,36 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 ## Task triage
 
-tt2. [action] Generate downloadable PNG template images from the template preset, including visible cell boundaries, panel labels, transparent or reserved blank cells, and image dimensions that exactly match the parser contract.
-tt3. [action] Add a template download panel in the app that lets users choose `16`, `32`, or `64`, preview the template, and download the PNG for use in an external image model.
-tt4. [action] Add upload slots for the six signed surface panels, with one file input per slot plus a combined-template upload path if the image contains all panels in one grid.
-tt5. [action] Implement browser image parsing that converts uploaded PNG/WebP/JPEG pixels into `ViewPanel` data through Canvas/ImageData, preserving occupied pixels and source colors.
-tt6. [action] Validate uploaded images before reconstruction: required slots present, dimensions match the selected preset, panel rectangles are in bounds, transparency/background maps to empty cells, and non-empty pixels map to valid occupied voxels.
-tt7. [action] Connect parsed uploaded panels to `reconstructProjectedHull` and `validateVoxelCandidate`, replacing the built-in benchmark as the active candidate when uploads are valid.
-tt8. [action] Update the viewer state so uploaded panels, reconstructed voxels, projected mode, conflict markers, and validation lanes all refresh from the same run record.
-tt9. [iterate] Create one known-good uploaded fixture set from the swirl sphere panels and one simple geometric object so upload parsing can be tested without relying on image-model variability.
-tt10. [iterate] Add prompt copy next to each downloadable template that tells an external image model to keep panel layout, grid boundaries, transparency/background, and pixel scale intact.
-tt11. [action] Add local JSON export/import for the first run record: template id, preset size, uploaded source names, parsed panels, reconstructed voxel candidate, and validation result.
-tt12. [risk] Image models may distort grid boundaries, labels, or panel dimensions; mitigate by using high-contrast template guides, strict parser validation, and clear failure messages before reconstruction.
-tt13. [deferred] Add external image generation API support after template download, upload parsing, reconstruction, validation, and local replay are reliable.
-tt14. [deferred] Add direct pixel editing and advanced hollow/ambiguity workflows after the uploaded-image-to-voxel loop works end to end.
+tt5. [action] Implement browser image parsing that converts face-slot PNG/WebP/JPEG uploads into `ViewPanel` data through Canvas/ImageData, preserving occupied pixels, transparent/background empties, source colors, slot id, configured preset size, and parse errors.
+tt6. [action] Add pre-reconstruction upload validation for required slots, image dimensions, file type, grid alignment, color/alpha policy, empty panels, duplicate slots, and malformed cell contents so invalid uploads fail before voxel construction.
+tt7. [action] Connect parsed uploaded face panels to `reconstructProjectedHull` and `validateVoxelCandidate`, then make the uploaded run replace the built-in swirl benchmark as the active candidate only when the parsed panel set passes validation.
+tt8. [action] Introduce a single local run record in UI state so uploaded source names, parsed panels, reconstructed voxels, projected mode, conflict markers, ambiguity markers, validation lanes, and replay/export data refresh from one source of truth.
+tt9. [iterate] Create deterministic fixture upload sets before image-model trials: a known-good swirl sphere six-panel set, a simple cube or cuboid set, one deliberately malformed dimension case, one empty-panel case, and one color-conflict case.
+tt10. [iterate] Add prompt copy next to each downloadable square grid template that tells an external image model to preserve the `1024 x 1024` canvas, visible grid boundaries, pixel scale, background/transparent empty cells, and one-pixel-per-cell semantics.
+tt11. [action] Add local JSON export/import for the first run record once tt8 is stable: schema version, template id, preset size, uploaded source names, parsed panels, reconstructed voxel candidate, validation result, and known non-persisted image-byte limitations.
+tt12. [research] Test whether current image models preserve `16`, `32`, and `64` square grid templates well enough for reliable parsing, and record model/prompt examples that pass or fail the parser.
+tt13. [risk] Image models may distort square grid boundaries, cell counts, colors, or image dimensions; mitigate with high-contrast template guides, parser rejection, clear failure messages, and fixture-first validation before treating generated examples as product proof.
+tt14. [risk] Six exterior surface panels may be insufficient for color-coherent reconstruction of concave or occluded objects; keep diagonal/cross-section panels and ambiguity reporting visible until the owner decides how much ambiguity is acceptable.
+tt15. [deferred] Add external image generation API support after template download, upload parsing, reconstruction, validation, local replay, and prompt-template usefulness are reliable.
+tt16. [deferred] Add direct pixel editing, direct slice editing, and advanced hollow/ambiguity workflows after the uploaded-image-to-voxel loop works end to end.
+tt17. [deferred] Decide whether subsystem PRDs are needed for parsing/data contracts, reconstruction/validation, and viewer interaction once the MVP run-record contract stops changing.
 
 ---
 
 ## Open questions
 
-No open questions.
-
-## Decisions
-
-d1. The free-rotate workspace remains upload/inspect/template-only for v0; direct voxel or slice editing is planned after reconstruction and validation are reliable.
-d2. The grid view should support various slice selections, including non-center slices, not only orthogonal view slices or 45-degree slices through center mass.
-d3. First-class saved-template grid size presets are `16`, `32`, and `64`; arbitrary dimensions are planned later.
-d4. Surface buttons in the voxel scene control projected-panel visibility, not camera movement. Orthogonal camera navigation is driven by the top-right gizmo with explicit current-surface labeling.
-d5. Voxel scene controls should be available near or over the canvas instead of only below later page content, because scroll-dependent controls make inspection workflows harder to use.
-d6. Compact packed voxel rendering with no gaps is the preferred default; cube outlines are an optional display mode for reading individual voxel boundaries.
-d7. The initial orthogonal surface set is the full six signed exterior set: `front`, `back`, `left`, `right`, `top`, and `bottom`; diagonal and target-slice camera views remain deferred.
-d8. The orientation gizmo belongs in the top-right of the voxel canvas.
-d9. Surface visibility controls should expose all six surfaces directly, without relying on grouped controls such as `Side`.
-d10. Orthogonal surface navigation should live in the top-right gizmo. Clicking a ball joint should animate to that signed surface, show the surface label below the gizmo, and leave free orbit rotation available afterward.
-d11. The separate `Orthogonal View` toggle and arrow controls are deprecated by the ball-joint gizmo model and should be removed from the primary control surface.
-d12. `Projected` display mode should preview only the voxels implied by currently visible projected panels, assign colors from surface-visible panel pixels where possible, flag conflicts from incompatible visible-panel evidence on the same projected surface voxel, and avoid changing the canonical voxel candidate or validation data.
-d13. Pixel-level editing for resolving projected-panel color conflicts is planned but deferred until projected-mode conflict detection is reliable.
-d14. All six projected panels must be visually aligned with the voxel volume side they represent; panel misalignment is a stability bug, not a cosmetic issue.
-d15. The top-right gizmo should evolve from an informational axis marker into an interactive Blender-style combination gizmo with drag rotation along colored arcs.
-d16. The current large canvas-local control footprint is not acceptable long term; inspection controls should be redesigned into a compact modern toolbar/control cluster.
-d17. The Blender navigation gizmo, not the object transform gizmo, is the closer behavioral reference for this viewer: drag orbits the view, clicking axis labels/balls aligns the view, and the camera remains freely orbitable after alignment.
-d18. The current `1548` projected color conflicts in the canonical swirl sphere are not accepted as expected behavior without deeper proof; the next implementation pass should treat them as a bug or unresolved projection-model limitation.
-d19. A likely root cause of the repeated perspective-rotate lock is camera-up handling: resetting `camera.up` to world Y while the camera is looking along the Y axis can make the up vector parallel to the view direction and destabilize OrbitControls.
-d20. Gizmo labels should be rendered on the positive-axis balls themselves, and the center ball should be an active orbit affordance rather than decorative geometry.
-d21. Hollow mode is a first-class display toggle. For projected inspection, it should support visible-panel hollow and full-hull surface-filter source modes, work for empty or filled hulls, shrink under additional projection constraints, and avoid rewriting the canonical voxel candidate until editing/reconstruction workflows mature.
-d22. Conflict voxels and ambiguous shell candidates should be visible as independently toggleable face overlays: `x` markers for conflicts and `?` markers for ambiguous candidate shell voxels.
-d23. The next MVP slice prioritizes downloadable template images, upload slots, and uploaded-image voxel construction before broadening object classes or adding external image-generation APIs.
-d24. The schema-backed `six-surface` MVP template preset exists for `16`, `32`, and `64` grids. Its combined image layout is a 3-by-2 grid ordered `front`, `back`, `left`, `right`, `top`, `bottom`, with each panel occupying a square `size` by `size` rectangle.
+oq1. What is the primary product proof for the next milestone: a valid uploaded swirl sphere, any simple valid voxel object from uploaded panels, or an image-model-generated object that passes the parser and validator without hand repair?
+oq2. Which object class should define the first non-sphere success path: simple geometric solids, voxelized icons, simple props, stylized plants, primitive creatures, or stylized animals?
+oq3. Should the MVP require all six signed exterior panels (`front`, `back`, `left`, `right`, `top`, `bottom`) before reconstruction, or should it allow partial panel sets that produce an explicitly ambiguous visual hull?
+oq4. For uploaded templates, should background/empty cells be represented by transparency, a fixed background color, a reserved palette index, or any low-alpha/near-background pixel that passes a tolerance?
+oq5. How strict should color/material validation be for v0: exact palette match, nearest-palette tolerance, perceptual color tolerance, or object-class-specific rules?
+oq6. What is the expected user workflow after parser rejection: only show actionable errors, offer automatic cleanup/cropping, or support manual repair through a later pixel/slice editor?
+oq7. Should diagonal and cross-section panels remain deferred until six-surface uploads are reliable, or are they required in the first product proof to reduce ambiguity?
+oq8. What should count as "recognizable form" in validation for early assets: fixed fixture comparison, silhouette similarity thresholds, owner/human review, or a mix of automated checks and human approval?
+oq9. Should local JSON export/import persist only parsed voxel/run data for reproducibility, or should it also embed source image bytes/base64 so a run can be fully replayed without separate image files?
+oq10. What level of failure reporting is required before calling the prototype useful: per-run summary only, per-panel errors, per-voxel conflict/ambiguity overlays, or exportable diagnostic reports?
+oq11. Which user persona should drive UI priority for the first workflow: the project owner experimenting quickly, a generator operator comparing many prompts, or an implementer debugging parser/reconstruction failures?
+oq12. Should the product optimize first for proving the technique locally in the browser, or for producing shareable/exportable voxel assets once a run validates?
+oq13. Are advanced viewer controls such as hollow projected modes and gizmo polish still product-critical for the next milestone, or should they pause behind upload parsing, run records, and fixture validation?
+oq14. When generated image panels are visually attractive but structurally invalid, should the app treat them as rejected candidates only, or preserve them as useful negative examples for prompt/template iteration?
+oq15. What decision would justify creating subsystem PRDs now: growing implementation complexity, multiple agents editing separate areas, or a need to stabilize contracts before more code is written?
