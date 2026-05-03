@@ -19,6 +19,7 @@ import {
   sixSurfaceTemplatePresets,
   sixSurfaceTemplatePresetSizes,
 } from "@/schemas/template";
+import { getTemplateImageMetrics } from "@/templates/templateImage";
 import { hasNoEnclosedVoids, validateVoxelCandidate } from "@/validation/voxelValidation";
 
 describe("isInsideSphere", () => {
@@ -261,6 +262,24 @@ describe("grid template schema", () => {
           panel.panelRect.y + panel.panelRect.height <= size * 2,
       ),
     ).toBe(true);
+  });
+
+  it("derives deterministic downloadable image metrics from square grid templates", () => {
+    const metrics16 = getTemplateImageMetrics(16);
+    const metrics64 = getTemplateImageMetrics(64);
+
+    expect(metrics16).toEqual({
+      cells: 16,
+      cellPixels: 64,
+      height: 1024,
+      width: 1024,
+    });
+    expect(metrics64).toEqual({
+      cells: 64,
+      cellPixels: 16,
+      height: 1024,
+      width: 1024,
+    });
   });
 
   it("accepts the first axis-plus-diagonal contract", () => {
