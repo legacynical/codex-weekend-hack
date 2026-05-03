@@ -31,14 +31,19 @@ const lanes = [
   {
     label: "Silhouette consistency",
     passed: benchmarkReport.geometry.silhouetteMismatches.length === 0,
+    detail: `${benchmarkReport.geometry.silhouetteMismatches.length} silhouette mismatches`,
   },
   {
     label: "Connected watertight volume",
     passed: benchmarkReport.geometry.connected && benchmarkReport.geometry.watertight,
+    detail: benchmarkReport.geometry.connected && benchmarkReport.geometry.watertight ? "connected and watertight" : "geometry needs review",
   },
   {
     label: "Surface color agreement",
     passed: benchmarkReport.color.coherent,
+    detail: benchmarkReport.color.coherent
+      ? "surface colors match projected panels"
+      : `${benchmarkReport.color.mismatches.length} hidden-surface color conflicts from axis-only visual hull`,
   },
 ] as const;
 
@@ -120,8 +125,11 @@ function App() {
                 {lanes.map((item, index) => (
                   <div key={item.label}>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-sm">{item.label}</span>
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <div className="grid gap-1">
+                        <span className="text-sm">{item.label}</span>
+                        <span className="text-xs text-muted-foreground">{item.detail}</span>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                         <CheckCircle2 className="size-3.5" aria-hidden="true" />
                         {item.passed ? "pass" : "review"}
                       </span>
