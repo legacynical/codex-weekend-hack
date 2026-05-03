@@ -1,52 +1,91 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Eye, Grid2X2, Layers } from "lucide-react";
 
 import { createSwirlSphere } from "@/benchmarks/swirlSphere";
 import { Button } from "@/components/ui/button";
 import type { ViewPanel } from "@/core/panels";
-import { projectVolumeToAxisPanels } from "@/core/projection";
+import { projectVolumeToSurfacePanels, reconstructProjectedHull } from "@/core/projection";
 import type { VoxelVolume } from "@/core/voxel";
 import { VoxelScene } from "@/rendering/voxelScene";
 
-const snapViews = [
-  { label: "Front", value: "front", axis: "y" },
-  { label: "Side", value: "side", axis: "x" },
-  { label: "Top", value: "top", axis: "z" },
+const surfaceViews = [
+  { label: "Front", value: "front" },
+  { label: "Back", value: "back" },
+  { label: "Left", value: "left" },
+  { label: "Right", value: "right" },
+  { label: "Top", value: "top" },
+  { label: "Bottom", value: "bottom" },
 ] as const;
 
-type SnapView = (typeof snapViews)[number]["value"];
+type SurfaceView = (typeof surfaceViews)[number]["value"];
+type PanelVisibility = Record<SurfaceView, boolean>;
+
+const initialPanelVisibility: PanelVisibility = {
+  back: true,
+  bottom: true,
+  front: true,
+  left: true,
+  right: true,
+  top: true,
+};
+
+const surfaceShortLabels: Record<SurfaceView, string> = {
+  back: "B",
+  bottom: "Bt",
+  front: "F",
+  left: "L",
+  right: "R",
+  top: "T",
+};
 
 export function VoxelViewer() {
-  const [activeView, setActiveView] = useState<SnapView>("top");
+  const [activeSurface, setActiveSurface] = useState<SurfaceView>("front");
   const [showVoxels, setShowVoxels] = useState(true);
   const [showPanels, setShowPanels] = useState(true);
   const [showOutlines, setShowOutlines] = useState(false);
+  const [showProjected, setShowProjected] = useState(false);
+  const [visiblePanels, setVisiblePanels] = useState<PanelVisibility>(initialPanelVisibility);
   const benchmark = useMemo(() => {
     const volume = createSwirlSphere({ x: 16, y: 16, z: 16 });
 
     return {
       volume,
-      panels: projectVolumeToAxisPanels(volume),
+      panels: projectVolumeToSurfacePanels(volume),
     };
   }, []);
+  const visiblePanelList = useMemo(
+    () => benchmark.panels.filter((panel) => panel.surface && visiblePanels[panel.surface]),
+    [benchmark.panels, visiblePanels],
+  );
+  const projected = useMemo(
+    () => reconstructProjectedHull(benchmark.volume.size, visiblePanelList),
+    [benchmark.volume.size, visiblePanelList],
+  );
 
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
       <VoxelCanvas
         volume={benchmark.volume}
         panels={benchmark.panels}
-        activeView={activeView}
+        projectedVolume={projected.volume}
+        activeSurface={activeSurface}
         showVoxels={showVoxels}
         showPanels={showPanels}
         showOutlines={showOutlines}
-        onActiveViewChange={setActiveView}
+        showProjected={showProjected}
+        visiblePanels={visiblePanels}
+        projectedConflictCount={projected.colorConflicts.length}
+        onActiveSurfaceChange={setActiveSurface}
         onShowVoxelsChange={setShowVoxels}
         onShowPanelsChange={setShowPanels}
         onShowOutlinesChange={setShowOutlines}
+        onShowProjectedChange={setShowProjected}
+        onVisiblePanelsChange={setVisiblePanels}
       />
       <div className="border-t bg-muted" data-testid="voxel-viewer">
-        <SliceWorkspacePreview panels={benchmark.panels} activeView={activeView} />
+        <SliceWorkspacePreview panels={benchmark.panels} visiblePanels={visiblePanels} />
       </div>
-      <div className="grid gap-3 border-t bg-card px-4 py-3 sm:grid-cols-3">
+      <div className="grid gap-3 border-t bg-card px-4 py-3 sm:grid-cols-2 lg:grid-cols-3">
         {benchmark.panels.map((panel) => (
           <PanelPreview key={panel.id} panel={panel} />
         ))}
@@ -54,7 +93,7 @@ export function VoxelViewer() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-background/90 px-4 py-3">
         <div>
           <p className="text-sm font-medium">Swirl sphere inspection</p>
-          <p className="text-xs text-muted-foreground">16 voxel preset with x/y/z projected slice planes</p>
+          <p className="text-xs text-muted-foreground">16 voxel preset with six signed projected surfaces</p>
         </div>
       </div>
     </div>
@@ -64,29 +103,41 @@ export function VoxelViewer() {
 function VoxelCanvas({
   volume,
   panels,
-  activeView,
+  projectedVolume,
+  activeSurface,
   showVoxels,
   showPanels,
   showOutlines,
-  onActiveViewChange,
+  showProjected,
+  visiblePanels,
+  projectedConflictCount,
+  onActiveSurfaceChange,
   onShowVoxelsChange,
   onShowPanelsChange,
   onShowOutlinesChange,
+  onShowProjectedChange,
+  onVisiblePanelsChange,
 }: {
   volume: VoxelVolume;
   panels: readonly ViewPanel[];
-  activeView: SnapView;
+  projectedVolume: VoxelVolume;
+  activeSurface: SurfaceView;
   showVoxels: boolean;
   showPanels: boolean;
   showOutlines: boolean;
-  onActiveViewChange: (view: SnapView) => void;
+  showProjected: boolean;
+  visiblePanels: PanelVisibility;
+  projectedConflictCount: number;
+  onActiveSurfaceChange: (view: SurfaceView) => void;
   onShowVoxelsChange: (updater: (current: boolean) => boolean) => void;
   onShowPanelsChange: (updater: (current: boolean) => boolean) => void;
   onShowOutlinesChange: (updater: (current: boolean) => boolean) => void;
+  onShowProjectedChange: (updater: (current: boolean) => boolean) => void;
+  onVisiblePanelsChange: (updater: (current: PanelVisibility) => PanelVisibility) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<VoxelScene | null>(null);
-  const initialViewRef = useRef(activeView);
+  const initialViewRef = useRef(activeSurface);
   const [status, setStatus] = useState<"initializing" | "ready" | "unavailable">("initializing");
 
   useEffect(() => {
@@ -104,6 +155,7 @@ function VoxelCanvas({
         volume,
         panels,
         initialView: initialViewRef.current,
+        onSurfaceChange: onActiveSurfaceChange,
       });
       sceneRef.current = scene;
       queueMicrotask(() => {
@@ -126,11 +178,11 @@ function VoxelCanvas({
       scene?.dispose();
       sceneRef.current = null;
     }
-  }, [volume, panels]);
+  }, [volume, panels, onActiveSurfaceChange]);
 
   useEffect(() => {
-    sceneRef.current?.snapTo(activeView);
-  }, [activeView]);
+    sceneRef.current?.setProjectedVolume(projectedVolume);
+  }, [projectedVolume]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -140,11 +192,15 @@ function VoxelCanvas({
     }
 
     if (typeof scene.setDisplayOptions === "function") {
-      scene.setDisplayOptions({ showOutlines, showPanels, showVoxels });
+      scene.setDisplayOptions({ showOutlines, showPanels, showProjected, showVoxels, visiblePanels });
     } else {
       scene.setVisibility({ showPanels, showVoxels });
     }
-  }, [showOutlines, showPanels, showVoxels]);
+  }, [showOutlines, showPanels, showProjected, showVoxels, visiblePanels]);
+
+  const setPanelVisible = (surface: SurfaceView) => {
+    onVisiblePanelsChange((current) => ({ ...current, [surface]: !current[surface] }));
+  };
 
   return (
     <section className="grid gap-0 bg-card" aria-label="3D voxel view">
@@ -154,55 +210,92 @@ function VoxelCanvas({
         data-testid="voxel-canvas-host"
       >
         <div
-          className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-md border border-white/15 bg-background/90 p-2 shadow-sm backdrop-blur"
+          className="absolute left-3 top-3 z-10 grid max-w-[min(520px,calc(100%-7.5rem))] gap-1 rounded-md border border-white/15 bg-background/90 p-1.5 shadow-sm backdrop-blur"
           data-testid="voxel-scene-controls"
           aria-label="Scene inspection controls"
         >
-          <Button
-            type="button"
-            variant={showVoxels ? "default" : "outline"}
-            size="sm"
-            aria-pressed={showVoxels}
-            onClick={() => onShowVoxelsChange((current) => !current)}
-          >
-            Voxels
-          </Button>
-          <Button
-            type="button"
-            variant={showPanels ? "default" : "outline"}
-            size="sm"
-            aria-pressed={showPanels}
-            onClick={() => onShowPanelsChange((current) => !current)}
-          >
-            Panels
-          </Button>
-          <Button
-            type="button"
-            variant={showOutlines ? "default" : "outline"}
-            size="sm"
-            aria-pressed={showOutlines}
-            data-testid="voxel-outline-toggle"
-            onClick={() => onShowOutlinesChange((current) => !current)}
-          >
-            Cube outlines
-          </Button>
-          {snapViews.map(({ label, value }) => (
+          <div className="flex flex-wrap items-center gap-1">
             <Button
-              key={value}
               type="button"
-              variant={activeView === value ? "default" : "outline"}
-              size="sm"
-              onClick={() => onActiveViewChange(value)}
+              variant={showVoxels ? "default" : "outline"}
+              size="icon-xs"
+              aria-pressed={showVoxels}
+              aria-label="Voxels"
+              title="Voxels"
+              onClick={() => onShowVoxelsChange((current) => !current)}
             >
-              {label}
+              <Box />
             </Button>
-          ))}
+            <Button
+              type="button"
+              variant={showPanels ? "default" : "outline"}
+              size="icon-xs"
+              aria-pressed={showPanels}
+              aria-label="Panels"
+              title="Panels"
+              onClick={() => onShowPanelsChange((current) => !current)}
+            >
+              <Layers />
+            </Button>
+            <Button
+              type="button"
+              variant={showProjected ? "default" : "outline"}
+              size="icon-xs"
+              aria-pressed={showProjected}
+              aria-label="Projected"
+              title="Projected"
+              data-testid="voxel-projected-toggle"
+              onClick={() => onShowProjectedChange((current) => !current)}
+            >
+              <Eye />
+            </Button>
+            <Button
+              type="button"
+              variant={showOutlines ? "default" : "outline"}
+              size="icon-xs"
+              aria-pressed={showOutlines}
+              aria-label="Cube outlines"
+              title="Cube outlines"
+              data-testid="voxel-outline-toggle"
+              onClick={() => onShowOutlinesChange((current) => !current)}
+            >
+              <Grid2X2 />
+            </Button>
+            {surfaceViews.map(({ label, value }) => (
+              <Button
+                key={value}
+                type="button"
+                variant={visiblePanels[value] ? "default" : "outline"}
+                size="xs"
+                aria-pressed={visiblePanels[value]}
+                aria-label={label}
+                title={label}
+                onClick={() => setPanelVisible(value)}
+              >
+                {surfaceShortLabels[value]}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            {projectedConflictCount > 0 ? (
+              <span className="text-xs font-medium text-destructive" data-testid="projected-conflict-status">
+                {projectedConflictCount} ambiguous surface color conflicts
+              </span>
+            ) : null}
+          </div>
         </div>
         <div
-          className="pointer-events-none absolute bottom-3 left-3 z-10 size-24 rounded-md border border-white/15"
+          className="pointer-events-none absolute right-3 top-3 z-10 size-24 rounded-md border border-white/15"
           data-testid="voxel-orientation-gizmo"
           aria-label="Orientation gizmo"
-        />
+        >
+          <span
+            className="absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded border border-white/15 bg-background/90 px-2 py-0.5 text-xs font-medium text-foreground"
+            data-testid="voxel-surface-label"
+          >
+            {activeSurface}
+          </span>
+        </div>
         {status === "unavailable" ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-primary-foreground/80">
             3D unavailable
@@ -221,26 +314,24 @@ function VoxelCanvas({
 
 function SliceWorkspacePreview({
   panels,
-  activeView,
+  visiblePanels,
 }: {
   panels: readonly ViewPanel[];
-  activeView: SnapView;
+  visiblePanels: PanelVisibility;
 }) {
-  const activeAxis = snapViews.find((view) => view.value === activeView)?.axis ?? "z";
-  const topPanel = panels.find((panel) => panel.axis === activeAxis) ?? panels[0];
-  const sidePanels = panels.filter((panel) => panel.id !== topPanel?.id);
-
   return (
     <div
-      className="relative z-10 grid min-h-[300px] grid-cols-1 justify-center gap-4 p-5 sm:min-h-[360px] sm:grid-cols-[minmax(0,320px)_120px]"
+      className="relative z-10 grid min-h-[260px] grid-cols-2 gap-4 p-5 sm:grid-cols-3"
       data-testid="voxel-html-preview"
     >
-      {topPanel ? <PanelTile panel={topPanel} emphasis="large" /> : null}
-      <div className="grid content-center gap-3">
-        {sidePanels.map((panel) => (
-          <PanelTile key={panel.id} panel={panel} emphasis="small" />
-        ))}
-      </div>
+      {panels.map((panel) => (
+        <PanelTile
+          key={panel.id}
+          panel={panel}
+          emphasis="small"
+          muted={panel.surface ? !visiblePanels[panel.surface] : false}
+        />
+      ))}
     </div>
   );
 }
@@ -269,9 +360,9 @@ function PanelPreview({ panel }: { panel: ViewPanel }) {
   );
 }
 
-function PanelTile({ panel, emphasis }: { panel: ViewPanel; emphasis: "large" | "small" }) {
+function PanelTile({ panel, emphasis, muted = false }: { panel: ViewPanel; emphasis: "large" | "small"; muted?: boolean }) {
   return (
-    <div className="grid rounded-md border bg-background/90 p-2 shadow-sm">
+    <div className={["grid rounded-md border bg-background/90 p-2 shadow-sm", muted ? "opacity-45" : ""].join(" ")}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-xs font-medium">{panel.id}</span>
         <span className="text-xs text-muted-foreground">{panel.axis}</span>

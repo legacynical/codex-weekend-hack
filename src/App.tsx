@@ -79,7 +79,7 @@ function App() {
                 </h1>
                 <p className="max-w-2xl text-base leading-7 text-muted-foreground">
                   The first benchmark viewer renders the swirl sphere candidate with
-                  projected slice planes, orbit rotation, and front, side, and top snaps.
+                  six projected surface panels, free orbit rotation, and gizmo-driven surface views.
                 </p>
               </div>
               <Badge variant="outline" className="font-normal">
