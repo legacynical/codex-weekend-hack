@@ -20,6 +20,7 @@ import {
   PlaneGeometry,
   PerspectiveCamera,
   Raycaster,
+  RepeatWrapping,
   Scene,
   SphereGeometry,
   Sprite,
@@ -779,8 +780,70 @@ function createPanelMeshes(size: GridSize, panels: readonly ViewPanel[]): Group 
   return group;
 }
 
+type PanelOrientation = Readonly<{
+  xAxis: readonly [number, number, number];
+  yAxis: readonly [number, number, number];
+  zAxis: readonly [number, number, number];
+  flipV: boolean;
+}>;
+
+export function getPanelOrientation(panel: Pick<ViewPanel, "axis" | "surface">): PanelOrientation {
+  if (panel.surface === "left") {
+    return {
+      xAxis: [0, 1, 0],
+      yAxis: [0, 0, -1],
+      zAxis: [-1, 0, 0],
+      flipV: true,
+    };
+  }
+
+  if (panel.surface === "right" || (!panel.surface && panel.axis === "x")) {
+    return {
+      xAxis: [0, 1, 0],
+      yAxis: [0, 0, 1],
+      zAxis: [1, 0, 0],
+      flipV: false,
+    };
+  }
+
+  if (panel.surface === "front" || (!panel.surface && panel.axis === "y")) {
+    return {
+      xAxis: [1, 0, 0],
+      yAxis: [0, 0, 1],
+      zAxis: [0, -1, 0],
+      flipV: false,
+    };
+  }
+
+  if (panel.surface === "back") {
+    return {
+      xAxis: [1, 0, 0],
+      yAxis: [0, 0, -1],
+      zAxis: [0, 1, 0],
+      flipV: true,
+    };
+  }
+
+  if (panel.surface === "bottom") {
+    return {
+      xAxis: [1, 0, 0],
+      yAxis: [0, -1, 0],
+      zAxis: [0, 0, -1],
+      flipV: true,
+    };
+  }
+
+  return {
+    xAxis: [1, 0, 0],
+    yAxis: [0, 1, 0],
+    zAxis: [0, 0, 1],
+    flipV: false,
+  };
+}
+
 function createPanelMesh(size: GridSize, panel: ViewPanel): Mesh {
-  const texture = createPanelTexture(panel);
+  const orientation = getPanelOrientation(panel);
+  const texture = createPanelTexture(panel, orientation.flipV);
   const geometry = new PlaneGeometry(panel.width, panel.height);
   const material = new MeshBasicMaterial({
     map: texture,
@@ -796,24 +859,24 @@ function createPanelMesh(size: GridSize, panel: ViewPanel): Mesh {
   mesh.name = `projected-panel-${panel.id}`;
   mesh.userData.surface = panel.surface;
   mesh.userData.texture = texture;
+  applyPanelBasis(
+    mesh,
+    new Vector3(...orientation.xAxis),
+    new Vector3(...orientation.yAxis),
+    new Vector3(...orientation.zAxis),
+  );
 
   if (panel.surface === "left") {
-    applyPanelBasis(mesh, new Vector3(0, -1, 0), new Vector3(0, 0, 1), new Vector3(-1, 0, 0));
     mesh.position.set(-(half.x + margin), 0, 0);
   } else if (panel.surface === "right" || (!panel.surface && panel.axis === "x")) {
-    applyPanelBasis(mesh, new Vector3(0, 1, 0), new Vector3(0, 0, 1), new Vector3(1, 0, 0));
     mesh.position.set(half.x + margin, 0, 0);
   } else if (panel.surface === "front" || (!panel.surface && panel.axis === "y")) {
-    applyPanelBasis(mesh, new Vector3(1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, -1, 0));
     mesh.position.set(0, -(half.y + margin), 0);
   } else if (panel.surface === "back") {
-    applyPanelBasis(mesh, new Vector3(-1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, 1, 0));
     mesh.position.set(0, half.y + margin, 0);
   } else if (panel.surface === "bottom") {
-    applyPanelBasis(mesh, new Vector3(1, 0, 0), new Vector3(0, -1, 0), new Vector3(0, 0, -1));
     mesh.position.set(0, 0, -(half.z + margin));
   } else {
-    applyPanelBasis(mesh, new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1));
     mesh.position.set(0, 0, half.z + margin);
   }
 
@@ -825,7 +888,7 @@ function applyPanelBasis(mesh: Mesh, xAxis: Vector3, yAxis: Vector3, zAxis: Vect
   mesh.quaternion.setFromRotationMatrix(matrix);
 }
 
-function createPanelTexture(panel: ViewPanel): CanvasTexture {
+function createPanelTexture(panel: ViewPanel, flipV = false): CanvasTexture {
   const canvas = document.createElement("canvas");
   const scale = 8;
   canvas.width = panel.width * scale;
@@ -853,6 +916,11 @@ function createPanelTexture(panel: ViewPanel): CanvasTexture {
   const texture = new CanvasTexture(canvas);
   texture.magFilter = NearestFilter;
   texture.minFilter = NearestFilter;
+  if (flipV) {
+    texture.wrapT = RepeatWrapping;
+    texture.repeat.y = -1;
+    texture.offset.y = 1;
+  }
   texture.needsUpdate = true;
 
   return texture;
