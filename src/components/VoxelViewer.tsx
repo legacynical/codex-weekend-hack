@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Eye, Grid2X2, Layers } from "lucide-react";
+import { Box, Eye, Grid2X2, Layers, Shell } from "lucide-react";
 
 import { createSwirlSphere } from "@/benchmarks/swirlSphere";
 import { Button } from "@/components/ui/button";
 import type { ViewPanel } from "@/core/panels";
-import { projectVolumeToSurfacePanels, reconstructProjectedHull } from "@/core/projection";
+import {
+  projectVolumeToSurfacePanels,
+  reconstructProjectedInspectionHull,
+  type ProjectedInspectionSourceMode,
+  type ProjectionMarker,
+} from "@/core/projection";
 import type { VoxelVolume } from "@/core/voxel";
 import { VoxelScene } from "@/rendering/voxelScene";
 
@@ -44,6 +49,10 @@ export function VoxelViewer() {
   const [showPanels, setShowPanels] = useState(true);
   const [showOutlines, setShowOutlines] = useState(false);
   const [showProjected, setShowProjected] = useState(false);
+  const [showHollow, setShowHollow] = useState(false);
+  const [showConflictMarkers, setShowConflictMarkers] = useState(true);
+  const [showAmbiguityMarkers, setShowAmbiguityMarkers] = useState(true);
+  const [hollowSource, setHollowSource] = useState<ProjectedInspectionSourceMode>("visible-panel-hollow");
   const [visiblePanels, setVisiblePanels] = useState<PanelVisibility>(initialPanelVisibility);
   const benchmark = useMemo(() => {
     const volume = createSwirlSphere({ x: 16, y: 16, z: 16 });
@@ -58,8 +67,13 @@ export function VoxelViewer() {
     [benchmark.panels, visiblePanels],
   );
   const projected = useMemo(
-    () => reconstructProjectedHull(benchmark.volume.size, visiblePanelList),
-    [benchmark.volume.size, visiblePanelList],
+    () =>
+      reconstructProjectedInspectionHull(benchmark.volume.size, benchmark.panels, {
+        hollow: showHollow,
+        hollowSource,
+        visibleSurfaces: new Set(visiblePanelList.map((panel) => panel.surface).filter((surface): surface is SurfaceView => Boolean(surface))),
+      }),
+    [benchmark.panels, benchmark.volume.size, hollowSource, showHollow, visiblePanelList],
   );
 
   return (
@@ -68,18 +82,29 @@ export function VoxelViewer() {
         volume={benchmark.volume}
         panels={benchmark.panels}
         projectedVolume={projected.volume}
+        conflictMarkers={projected.conflictMarkers}
+        ambiguityMarkers={projected.ambiguityMarkers}
         activeSurface={activeSurface}
         showVoxels={showVoxels}
         showPanels={showPanels}
         showOutlines={showOutlines}
         showProjected={showProjected}
+        showHollow={showHollow}
+        showConflictMarkers={showConflictMarkers}
+        showAmbiguityMarkers={showAmbiguityMarkers}
+        hollowSource={hollowSource}
         visiblePanels={visiblePanels}
         projectedConflictCount={projected.colorConflicts.length}
+        projectedAmbiguityCount={projected.ambiguityMarkers.length}
         onActiveSurfaceChange={setActiveSurface}
         onShowVoxelsChange={setShowVoxels}
         onShowPanelsChange={setShowPanels}
         onShowOutlinesChange={setShowOutlines}
         onShowProjectedChange={setShowProjected}
+        onShowHollowChange={setShowHollow}
+        onShowConflictMarkersChange={setShowConflictMarkers}
+        onShowAmbiguityMarkersChange={setShowAmbiguityMarkers}
+        onHollowSourceChange={setHollowSource}
         onVisiblePanelsChange={setVisiblePanels}
       />
       <div className="border-t bg-muted" data-testid="voxel-viewer">
@@ -104,35 +129,57 @@ function VoxelCanvas({
   volume,
   panels,
   projectedVolume,
+  conflictMarkers,
+  ambiguityMarkers,
   activeSurface,
   showVoxels,
   showPanels,
   showOutlines,
   showProjected,
+  showHollow,
+  showConflictMarkers,
+  showAmbiguityMarkers,
+  hollowSource,
   visiblePanels,
   projectedConflictCount,
+  projectedAmbiguityCount,
   onActiveSurfaceChange,
   onShowVoxelsChange,
   onShowPanelsChange,
   onShowOutlinesChange,
   onShowProjectedChange,
+  onShowHollowChange,
+  onShowConflictMarkersChange,
+  onShowAmbiguityMarkersChange,
+  onHollowSourceChange,
   onVisiblePanelsChange,
 }: {
   volume: VoxelVolume;
   panels: readonly ViewPanel[];
   projectedVolume: VoxelVolume;
+  conflictMarkers: readonly ProjectionMarker[];
+  ambiguityMarkers: readonly ProjectionMarker[];
   activeSurface: SurfaceView;
   showVoxels: boolean;
   showPanels: boolean;
   showOutlines: boolean;
   showProjected: boolean;
+  showHollow: boolean;
+  showConflictMarkers: boolean;
+  showAmbiguityMarkers: boolean;
+  hollowSource: ProjectedInspectionSourceMode;
   visiblePanels: PanelVisibility;
   projectedConflictCount: number;
+  projectedAmbiguityCount: number;
   onActiveSurfaceChange: (view: SurfaceView) => void;
   onShowVoxelsChange: (updater: (current: boolean) => boolean) => void;
   onShowPanelsChange: (updater: (current: boolean) => boolean) => void;
   onShowOutlinesChange: (updater: (current: boolean) => boolean) => void;
   onShowProjectedChange: (updater: (current: boolean) => boolean) => void;
+  onShowHollowChange: (updater: (current: boolean) => boolean) => void;
+  onShowConflictMarkersChange: (updater: (current: boolean) => boolean) => void;
+  onShowAmbiguityMarkersChange: (updater: (current: boolean) => boolean) => void;
+  onHollowSourceChange: (mode: ProjectedInspectionSourceMode) => void;
   onVisiblePanelsChange: (updater: (current: PanelVisibility) => PanelVisibility) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -149,6 +196,7 @@ function VoxelCanvas({
 
     let scene: VoxelScene | null = null;
     let mounted = true;
+    let readyFrame: number | null = null;
 
     try {
       scene = new VoxelScene(host, {
@@ -158,14 +206,19 @@ function VoxelCanvas({
         onSurfaceChange: onActiveSurfaceChange,
       });
       sceneRef.current = scene;
-      queueMicrotask(() => {
-        if (mounted) {
-          setStatus("ready");
-        }
+      readyFrame = window.requestAnimationFrame(() => {
+        readyFrame = window.requestAnimationFrame(() => {
+          if (mounted) {
+            setStatus("ready");
+          }
+        });
       });
 
       return () => {
         mounted = false;
+        if (readyFrame !== null) {
+          window.cancelAnimationFrame(readyFrame);
+        }
         scene?.dispose();
         sceneRef.current = null;
       };
@@ -185,6 +238,10 @@ function VoxelCanvas({
   }, [projectedVolume]);
 
   useEffect(() => {
+    sceneRef.current?.setInspectionMarkers({ ambiguityMarkers, conflictMarkers });
+  }, [ambiguityMarkers, conflictMarkers]);
+
+  useEffect(() => {
     const scene = sceneRef.current;
 
     if (!scene) {
@@ -192,11 +249,19 @@ function VoxelCanvas({
     }
 
     if (typeof scene.setDisplayOptions === "function") {
-      scene.setDisplayOptions({ showOutlines, showPanels, showProjected, showVoxels, visiblePanels });
+      scene.setDisplayOptions({
+        showAmbiguityMarkers,
+        showConflictMarkers,
+        showOutlines,
+        showPanels,
+        showProjected,
+        showVoxels,
+        visiblePanels,
+      });
     } else {
       scene.setVisibility({ showPanels, showVoxels });
     }
-  }, [showOutlines, showPanels, showProjected, showVoxels, visiblePanels]);
+  }, [showAmbiguityMarkers, showConflictMarkers, showOutlines, showPanels, showProjected, showVoxels, visiblePanels]);
 
   const setPanelVisible = (surface: SurfaceView) => {
     onVisiblePanelsChange((current) => ({ ...current, [surface]: !current[surface] }));
@@ -251,6 +316,18 @@ function VoxelCanvas({
             </Button>
             <Button
               type="button"
+              variant={showHollow ? "default" : "outline"}
+              size="icon-xs"
+              aria-pressed={showHollow}
+              aria-label="Hollow"
+              title="Hollow"
+              data-testid="voxel-hollow-toggle"
+              onClick={() => onShowHollowChange((current) => !current)}
+            >
+              <Shell />
+            </Button>
+            <Button
+              type="button"
               variant={showOutlines ? "default" : "outline"}
               size="icon-xs"
               aria-pressed={showOutlines}
@@ -277,9 +354,62 @@ function VoxelCanvas({
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-1">
+            <Button
+              type="button"
+              variant={hollowSource === "visible-panel-hollow" ? "default" : "outline"}
+              size="xs"
+              aria-pressed={hollowSource === "visible-panel-hollow"}
+              aria-label="Visible-panel hollow"
+              title="Visible-panel hollow"
+              data-testid="voxel-hollow-visible-source"
+              onClick={() => onHollowSourceChange("visible-panel-hollow")}
+            >
+              VH
+            </Button>
+            <Button
+              type="button"
+              variant={hollowSource === "full-hull-surface-filter" ? "default" : "outline"}
+              size="xs"
+              aria-pressed={hollowSource === "full-hull-surface-filter"}
+              aria-label="Full-hull surface filter"
+              title="Full-hull surface filter"
+              data-testid="voxel-hollow-full-source"
+              onClick={() => onHollowSourceChange("full-hull-surface-filter")}
+            >
+              FH
+            </Button>
+            <Button
+              type="button"
+              variant={showConflictMarkers ? "default" : "outline"}
+              size="xs"
+              aria-pressed={showConflictMarkers}
+              aria-label="Conflict markers"
+              title="Conflict markers"
+              data-testid="voxel-conflict-marker-toggle"
+              onClick={() => onShowConflictMarkersChange((current) => !current)}
+            >
+              x
+            </Button>
+            <Button
+              type="button"
+              variant={showAmbiguityMarkers ? "default" : "outline"}
+              size="xs"
+              aria-pressed={showAmbiguityMarkers}
+              aria-label="Ambiguity markers"
+              title="Ambiguity markers"
+              data-testid="voxel-ambiguity-marker-toggle"
+              onClick={() => onShowAmbiguityMarkersChange((current) => !current)}
+            >
+              ?
+            </Button>
             {projectedConflictCount > 0 ? (
               <span className="text-xs font-medium text-destructive" data-testid="projected-conflict-status">
                 {projectedConflictCount} ambiguous surface color conflicts
+              </span>
+            ) : null}
+            {showHollow && projectedAmbiguityCount > 0 ? (
+              <span className="text-xs font-medium text-amber-500" data-testid="projected-ambiguity-status">
+                {projectedAmbiguityCount} shell candidates
               </span>
             ) : null}
           </div>

@@ -31,6 +31,7 @@ import {
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type { SurfaceId, ViewPanel } from "@/core/panels";
+import type { ProjectionMarker } from "@/core/projection";
 import type { GridSize, Voxel, VoxelVolume } from "@/core/voxel";
 
 export type SurfaceView = SurfaceId;
@@ -44,7 +45,11 @@ export type VoxelSceneInput = Readonly<{
   showVoxels?: boolean;
   showOutlines?: boolean;
   showProjected?: boolean;
+  showConflictMarkers?: boolean;
+  showAmbiguityMarkers?: boolean;
   visiblePanels?: Partial<Record<SurfaceId, boolean>>;
+  conflictMarkers?: readonly ProjectionMarker[];
+  ambiguityMarkers?: readonly ProjectionMarker[];
   onSurfaceChange?: (surface: SurfaceView) => void;
 }>;
 
@@ -65,14 +70,21 @@ export class VoxelScene {
   private readonly voxelRoot = new Group();
   private readonly projectedRoot = new Group();
   private readonly outlineRoot = new Group();
+  private readonly projectedOutlineRoot = new Group();
   private readonly panelRoot = new Group();
+  private readonly conflictMarkerRoot = new Group();
+  private readonly ambiguityMarkerRoot = new Group();
   private readonly resizeObserver: ResizeObserver;
   private sceneSize: GridSize;
   private activeGizmoDrag:
     | {
+        center: boolean;
+        moved: boolean;
         pointerId: number;
         previousX: number;
         previousY: number;
+        startX: number;
+        startY: number;
       }
     | null = null;
   private activeSceneDrag:
@@ -122,6 +134,7 @@ export class VoxelScene {
     this.renderer.domElement.addEventListener("lostpointercapture", this.handleScenePointerUp, true);
     window.addEventListener("pointerup", this.handleGizmoPointerUp, true);
     window.addEventListener("pointerup", this.handleScenePointerUp, true);
+    window.addEventListener("mouseup", this.handleMouseReleaseFallback, true);
     this.host.append(this.renderer.domElement);
 
     this.camera = new PerspectiveCamera(45, 1, 0.1, 1000);
@@ -139,7 +152,15 @@ export class VoxelScene {
     const keyLight = new DirectionalLight("#ffffff", 2.6);
     keyLight.position.set(24, 36, 42);
     this.scene.add(keyLight);
-    this.root.add(this.voxelRoot, this.projectedRoot, this.outlineRoot, this.panelRoot);
+    this.root.add(
+      this.voxelRoot,
+      this.projectedRoot,
+      this.outlineRoot,
+      this.projectedOutlineRoot,
+      this.panelRoot,
+      this.conflictMarkerRoot,
+      this.ambiguityMarkerRoot,
+    );
     this.scene.add(this.root);
     this.setupGizmo();
 
@@ -157,14 +178,24 @@ export class VoxelScene {
     this.clearGroup(this.voxelRoot);
     this.clearGroup(this.projectedRoot);
     this.clearGroup(this.outlineRoot);
+    this.clearGroup(this.projectedOutlineRoot);
     this.clearGroup(this.panelRoot);
+    this.clearGroup(this.conflictMarkerRoot);
+    this.clearGroup(this.ambiguityMarkerRoot);
     this.voxelRoot.add(createVoxelMeshes(input.volume));
     if (input.projectedVolume) {
       this.projectedRoot.add(createVoxelMeshes(input.projectedVolume));
+      this.projectedOutlineRoot.add(createVoxelOutlines(input.projectedVolume));
     }
     this.outlineRoot.add(createVoxelOutlines(input.volume));
     this.panelRoot.add(createPanelMeshes(this.sceneSize, input.panels));
+    this.setInspectionMarkers({
+      ambiguityMarkers: input.ambiguityMarkers ?? [],
+      conflictMarkers: input.conflictMarkers ?? [],
+    });
     this.setDisplayOptions({
+      showAmbiguityMarkers: input.showAmbiguityMarkers ?? true,
+      showConflictMarkers: input.showConflictMarkers ?? true,
       showOutlines: input.showOutlines ?? false,
       showPanels: input.showPanels ?? true,
       showVoxels: input.showVoxels ?? true,
@@ -175,7 +206,23 @@ export class VoxelScene {
 
   setProjectedVolume(volume: VoxelVolume): void {
     this.clearGroup(this.projectedRoot);
+    this.clearGroup(this.projectedOutlineRoot);
     this.projectedRoot.add(createVoxelMeshes(volume));
+    this.projectedOutlineRoot.add(createVoxelOutlines(volume));
+    this.render();
+  }
+
+  setInspectionMarkers({
+    ambiguityMarkers,
+    conflictMarkers,
+  }: {
+    ambiguityMarkers: readonly ProjectionMarker[];
+    conflictMarkers: readonly ProjectionMarker[];
+  }): void {
+    this.clearGroup(this.conflictMarkerRoot);
+    this.clearGroup(this.ambiguityMarkerRoot);
+    this.conflictMarkerRoot.add(createMarkerSprites(this.sceneSize, conflictMarkers));
+    this.ambiguityMarkerRoot.add(createMarkerSprites(this.sceneSize, ambiguityMarkers));
     this.render();
   }
 
@@ -184,8 +231,12 @@ export class VoxelScene {
     showPanels,
     showProjected,
     showVoxels,
+    showConflictMarkers,
+    showAmbiguityMarkers,
     visiblePanels,
   }: {
+    showAmbiguityMarkers?: boolean;
+    showConflictMarkers?: boolean;
     showOutlines: boolean;
     showPanels: boolean;
     showProjected?: boolean;
@@ -195,7 +246,10 @@ export class VoxelScene {
     this.setPanelVisibility(showPanels, visiblePanels);
     this.projectedRoot.visible = showVoxels && (showProjected ?? false);
     this.voxelRoot.visible = showVoxels && !(showProjected ?? false);
-    this.outlineRoot.visible = showVoxels && showOutlines;
+    this.outlineRoot.visible = showVoxels && showOutlines && !(showProjected ?? false);
+    this.projectedOutlineRoot.visible = showVoxels && showOutlines && (showProjected ?? false);
+    this.conflictMarkerRoot.visible = (showConflictMarkers ?? true) && (showProjected ?? false);
+    this.ambiguityMarkerRoot.visible = (showAmbiguityMarkers ?? true) && (showProjected ?? false);
     this.render();
   }
 
@@ -210,6 +264,7 @@ export class VoxelScene {
   }
 
   setView(view: SurfaceView, { animate = true }: { animate?: boolean } = {}): void {
+    this.renderer.domElement.dataset.activeSurface = view;
     const center = centerOf();
     const next = cameraPoseForSurface(view, this.sceneSize);
     if (animate) {
@@ -250,7 +305,10 @@ export class VoxelScene {
     this.clearGroup(this.voxelRoot);
     this.clearGroup(this.projectedRoot);
     this.clearGroup(this.outlineRoot);
+    this.clearGroup(this.projectedOutlineRoot);
     this.clearGroup(this.panelRoot);
+    this.clearGroup(this.conflictMarkerRoot);
+    this.clearGroup(this.ambiguityMarkerRoot);
     this.clearGroup(this.gizmoRoot);
     this.renderer.domElement.removeEventListener("pointerdown", this.handleGizmoPointerDown, true);
     this.renderer.domElement.removeEventListener("pointerdown", this.handleScenePointerDown, true);
@@ -264,6 +322,7 @@ export class VoxelScene {
     this.renderer.domElement.removeEventListener("lostpointercapture", this.handleScenePointerUp, true);
     window.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
     window.removeEventListener("pointerup", this.handleScenePointerUp, true);
+    window.removeEventListener("mouseup", this.handleMouseReleaseFallback, true);
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -350,22 +409,26 @@ export class VoxelScene {
     event.stopPropagation();
 
     this.animation = null;
-    const ballSurface = this.gizmoSurfaceFromPointer(event);
+    const hit = this.gizmoHitFromPointer(event);
 
-    if (ballSurface) {
-      this.setView(ballSurface);
-      this.onSurfaceChange?.(ballSurface);
-      this.renderer.domElement.dataset.activeSurface = ballSurface;
+    if (hit.surface) {
+      this.setView(hit.surface);
+      this.onSurfaceChange?.(hit.surface);
+      this.renderer.domElement.dataset.activeSurface = hit.surface;
       return;
     }
 
     this.controls.enabled = false;
     this.activeGizmoDrag = {
+      center: hit.center,
+      moved: false,
       pointerId: event.pointerId,
       previousX: event.clientX,
       previousY: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
     };
-    this.renderer.domElement.setPointerCapture(event.pointerId);
+    this.capturePointer(event.pointerId);
   };
 
   private handleGizmoPointerMove = (event: PointerEvent): void => {
@@ -378,11 +441,20 @@ export class VoxelScene {
 
     const deltaX = event.clientX - this.activeGizmoDrag.previousX;
     const deltaY = event.clientY - this.activeGizmoDrag.previousY;
+    const totalDeltaX = event.clientX - this.activeGizmoDrag.startX;
+    const totalDeltaY = event.clientY - this.activeGizmoDrag.startY;
     this.activeGizmoDrag.previousX = event.clientX;
     this.activeGizmoDrag.previousY = event.clientY;
+    if (totalDeltaX ** 2 + totalDeltaY ** 2 > 6 ** 2) {
+      this.activeGizmoDrag.moved = true;
+    }
     this.orbitCameraFromDrag(deltaX, deltaY);
     const currentCount = Number(this.renderer.domElement.dataset.gizmoDrags ?? "0");
     this.renderer.domElement.dataset.gizmoDrags = String(currentCount + 1);
+    if (this.activeGizmoDrag.center) {
+      const currentCenterCount = Number(this.renderer.domElement.dataset.gizmoCenterDrags ?? "0");
+      this.renderer.domElement.dataset.gizmoCenterDrags = String(currentCenterCount + 1);
+    }
   };
 
   private handleGizmoPointerUp = (event: PointerEvent): void => {
@@ -392,7 +464,13 @@ export class VoxelScene {
 
     event.preventDefault();
     event.stopPropagation();
+    const shouldSnapFromCenterClick = this.activeGizmoDrag.center && !this.activeGizmoDrag.moved;
     this.finishGizmoDrag(event.pointerId);
+    if (shouldSnapFromCenterClick) {
+      const nextSurface = closestSurfaceFromCamera(this.camera, this.controls.target);
+      this.setView(nextSurface);
+      this.onSurfaceChange?.(nextSurface);
+    }
   };
 
   private finishGizmoDrag(pointerId?: number): void {
@@ -418,7 +496,7 @@ export class VoxelScene {
       previousX: event.clientX,
       previousY: event.clientY,
     };
-    this.renderer.domElement.setPointerCapture(event.pointerId);
+    this.capturePointer(event.pointerId);
   };
 
   private handleScenePointerMove = (event: PointerEvent): void => {
@@ -456,6 +534,25 @@ export class VoxelScene {
     this.controls.enabled = true;
   }
 
+  private capturePointer(pointerId: number): void {
+    try {
+      this.renderer.domElement.setPointerCapture(pointerId);
+    } catch {
+      // Programmatic smoke-test events do not always create an active browser pointer.
+      // Real pointer interactions still get capture; synthetic drags fall back to window release handlers.
+    }
+  }
+
+  private handleMouseReleaseFallback = (): void => {
+    if (this.activeGizmoDrag) {
+      this.finishGizmoDrag(this.activeGizmoDrag.pointerId);
+    }
+
+    if (this.activeSceneDrag) {
+      this.finishSceneDrag(this.activeSceneDrag.pointerId);
+    }
+  };
+
   private orbitCameraFromDrag(deltaX: number, deltaY: number): void {
     const target = this.controls.target;
     const offset = this.camera.position.clone().sub(target);
@@ -485,7 +582,7 @@ export class VoxelScene {
     return localX >= x && localX <= x + size && localY >= y && localY <= y + size;
   }
 
-  private gizmoSurfaceFromPointer(event: PointerEvent): SurfaceView | null {
+  private gizmoHitFromPointer(event: PointerEvent): { center: boolean; surface: SurfaceView | null } {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const { size, x, y } = gizmoViewport(rect.width, rect.height);
     const localX = event.clientX - rect.left - x;
@@ -494,16 +591,25 @@ export class VoxelScene {
     const normalizedY = localY / size;
 
     if (isInGizmoCenterDragZone(normalizedX, normalizedY)) {
-      return null;
+      return { center: true, surface: null };
     }
 
     const pointer = new Vector2((localX / size) * 2 - 1, (localY / size) * 2 - 1);
 
     this.raycaster.setFromCamera(pointer, this.gizmoCamera);
     const intersections = this.raycaster.intersectObjects(this.gizmoRoot.children, true);
-    const ball = intersections.find((intersection) => intersection.object.userData.surface)?.object;
+    const firstActionableHit = intersections.find(
+      (intersection) => intersection.object.userData.gizmoCenter || intersection.object.userData.surface,
+    )?.object;
 
-    return (ball?.userData.surface as SurfaceView | undefined) ?? fallbackGizmoSurface(normalizedX, normalizedY);
+    if (firstActionableHit?.userData.gizmoCenter) {
+      return { center: true, surface: null };
+    }
+
+    return {
+      center: false,
+      surface: (firstActionableHit?.userData.surface as SurfaceView | undefined) ?? fallbackGizmoSurface(normalizedX, normalizedY),
+    };
   }
 
   private setPanelVisibility(showPanels: boolean, visiblePanels?: Partial<Record<SurfaceId, boolean>>): void {
@@ -588,6 +694,54 @@ function createVoxelOutlines(volume: VoxelVolume): LineSegments {
   });
 
   return new LineSegments(geometry, material);
+}
+
+function createMarkerSprites(size: GridSize, markers: readonly ProjectionMarker[]): Group {
+  const group = new Group();
+  const offset = centerOffset(size);
+
+  markers.forEach((marker) => {
+    const sprite = createVoxelMarker(marker.label, marker.color);
+    sprite.position.set(marker.x - offset.x, marker.y - offset.y, marker.z - offset.z);
+    sprite.userData.surface = marker.surface;
+    group.add(sprite);
+  });
+
+  return group;
+}
+
+function createVoxelMarker(label: ProjectionMarker["label"], color: string): Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error(`Could not create ${label} marker`);
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "rgba(0,0,0,0.62)";
+  context.beginPath();
+  context.roundRect(8, 8, 48, 48, 10);
+  context.fill();
+  context.strokeStyle = color;
+  context.lineWidth = 5;
+  context.stroke();
+  context.fillStyle = color;
+  context.font = "800 42px sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label, 32, 34);
+
+  const texture = new CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const sprite = new Sprite(material);
+  sprite.scale.set(0.78, 0.78, 0.78);
+  sprite.userData.texture = texture;
+
+  return sprite;
 }
 
 function appendCubeEdges(positions: number[], centerX: number, centerY: number, centerZ: number): void {
@@ -724,7 +878,11 @@ function createGizmoCenterBall(): Mesh {
     opacity: 0.9,
   });
 
-  return new Mesh(new SphereGeometry(0.16, 24, 16), material);
+  const ball = new Mesh(new SphereGeometry(0.24, 28, 18), material);
+
+  ball.userData.gizmoCenter = true;
+
+  return ball;
 }
 
 function createGizmoBall(
@@ -860,6 +1018,20 @@ function cameraPoseForSurface(surface: SurfaceView, size: GridSize): { position:
   }
 }
 
+function closestSurfaceFromCamera(camera: PerspectiveCamera, target: Vector3): SurfaceView {
+  const direction = camera.position.clone().sub(target).normalize();
+  const candidates: Array<{ surface: SurfaceView; value: number }> = [
+    { surface: "left", value: -direction.x },
+    { surface: "right", value: direction.x },
+    { surface: "front", value: -direction.y },
+    { surface: "back", value: direction.y },
+    { surface: "bottom", value: -direction.z },
+    { surface: "top", value: direction.z },
+  ];
+
+  return candidates.reduce((best, candidate) => (candidate.value > best.value ? candidate : best)).surface;
+}
+
 function gizmoViewport(width: number, height: number): { size: number; x: number; y: number } {
   const size = Math.min(96, Math.max(72, Math.floor(Math.min(width, height) * 0.24)));
   const margin = 12;
@@ -892,7 +1064,7 @@ function fallbackGizmoSurface(normalizedX: number, normalizedY: number): Surface
 }
 
 function isInGizmoCenterDragZone(normalizedX: number, normalizedY: number): boolean {
-  return (normalizedX - 0.5) ** 2 + (normalizedY - 0.5) ** 2 < 0.13 ** 2;
+  return (normalizedX - 0.5) ** 2 + (normalizedY - 0.5) ** 2 < 0.2 ** 2;
 }
 
 function disposeObject(object: Object3D): void {
