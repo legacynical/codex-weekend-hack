@@ -1,6 +1,6 @@
 # Product requirements
 
-Last verified: 2026-05-02 08:43 PM PDT
+Last verified: 2026-05-02 11:35 PM PDT
 Source-of-truth for: product goals, scope, user-facing rules, and decision-rich intent for implementers
 
 > Purpose: capture settled product behavior and requirements. Do not treat guesswork as decisions; record uncertainty, conflicts, and owner decisions in Open questions (`oqN.` handles). Audience: project owner, future humans, and agent implementers.
@@ -33,7 +33,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Slice/grid view configuration should support various selected slice planes, not only orthogonal view slices or 45-degree slices through center mass.
 - Multi-view grid inputs covering `x`, `y`, `z`, and 45-degree diagonal or cross-section panels for experimentation.
 - A reconstruction or constraint-solving step that converts generated 2D views into a candidate 3D voxel volume.
-- A free-rotate 3D viewer for the reconstructed target voxel model, with snap-to orthogonal camera views similar to Blender.
+- A free-rotate 3D viewer for the reconstructed target voxel model, with gizmo-driven orthogonal surface selection for profile inspection.
 - Grid template configuration, validation, saving, and reuse so users can create valid templates for external image models to fill with pixel art from multiple angles.
 - A validation layer that detects impossible, ambiguous, disconnected, non-watertight, color-incoherent, or malformed voxel results.
 - Color/material assignment as part of the first validation loop.
@@ -53,7 +53,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 - Generate or upload at least one simple object class from constrained 2D images into a valid 3D voxel asset.
 - Show the input grid, parsed views, reconstructed voxel result, color/material preview, rotatable model viewer, and validation report for each run.
-- Provide a configurable slice/grid workspace that can display uploaded pixel panels on intersecting planes, rotate freely, and snap to orthogonal views for template inspection.
+- Provide a configurable slice/grid workspace that can display uploaded pixel panels on intersecting planes, rotate freely, and use gizmo-driven orthogonal surface selection for template inspection.
 - Let users save at least one valid grid template configuration for reuse with external image model prompts.
 - Validate occupancy, watertight/connected volume, recognizable form, and coherent colors/materials.
 - Include a small benchmark set that distinguishes valid generations, invalid generations, and ambiguous generations.
@@ -94,7 +94,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 | --- | --- | --- |
 | Runtime and UI | Browser-first React/Vite/TypeScript app. | The first workflow must run locally without accounts, backend storage, or external image-generation API credentials. |
 | Voxel core | Framework-independent TypeScript modules. | Reconstruction, projection, and validation logic must be deterministic and testable without React or Three.js. |
-| Rendering | Direct Three.js voxel and slice-grid preview. | Rendering must visualize validated voxel data, uploaded slice planes, orthogonal snap views, free orbit controls, and validation overlays; it must not become the source of truth for occupancy, template validity, or material state. |
+| Rendering | Direct Three.js voxel and slice-grid preview. | Rendering must visualize validated voxel data, uploaded slice planes, gizmo-driven orthogonal surface selection, free orbit controls, and validation overlays; it must not become the source of truth for occupancy, template validity, or material state. |
 | Parsing and contracts | Browser Canvas/ImageData plus typed schemas. | Uploaded image grids are untrusted inputs and must be parsed, schema-validated, and rejected with actionable errors before reconstruction when malformed. |
 | Persistence | Local JSON export/import. | Runs, benchmarks, and saved grid templates must be reproducible without a server, including schema version, grid dimensions, slice/view definitions, source-image references, parsed panels, voxel data, material data, and validation results. |
 
@@ -146,13 +146,21 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - The slice workspace should allow users to select among multiple configured slice planes, including non-center slices; v0 should not assume all useful slices pass through center mass.
 - Users should be able to upload generated pixel images into specific slice/view slots and inspect how those panels relate spatially before or during reconstruction.
 - The slice workspace and reconstructed voxel model viewer should support free orbit rotation.
-- Camera controls should include snap-to orthogonal views, with front, side, and top required first.
-- Back, bottom, diagonal, and target-slice snap views are planned after the base camera path works.
-- Snap views must not replace free rotation; users need both fixed profile checks and arbitrary-angle inspection.
-- The 3D voxel scene should include an always-visible orientation gizmo with colored `x`, `y`, and `z` arrows so users can understand the current camera orientation while freely rotating.
-- Frequently used 3D inspection controls, including object visibility, projected-panel visibility, voxel outline mode, and camera snaps, should remain reachable from the voxel scene itself without requiring the user to scroll away from the canvas.
+- The scene should support the six signed exterior panels as first-class inspection surfaces: `front`, `back`, `left`, `right`, `top`, and `bottom`.
+- Each signed projected panel must be spatially aligned with the matching side of the voxel volume. A panel is not acceptable if it appears mirrored, rotated incorrectly, offset from the expected side, or visually disconnected from the surface it represents.
+- Panel visibility controls and camera orientation controls are separate concepts. Surface buttons should expose all six projected panels directly as `Front`, `Back`, `Left`, `Right`, `Top`, and `Bottom`, and should toggle panel visibility rather than move the camera.
+- Orthogonal camera navigation should be exposed through the orientation gizmo rather than a separate mode toggle or arrow-control cluster.
+- Clicking a gizmo ball joint should animate the camera to the corresponding signed orthogonal surface: `front`, `back`, `left`, `right`, `top`, or `bottom`.
+- The active surface text label should appear below the gizmo after a ball-joint selection so users know which orthogonal face is in view.
+- Free camera rotation should remain available like Blender after any orthogonal surface transition; orthogonal selection should not leave the viewer in a locked or pan-only state.
+- Dedicated orthogonal-view toggle and arrow controls are deprecated and should be removed cleanly once ball-joint navigation is available.
+- The 3D voxel scene should include an always-visible Blender-style combination orientation gizmo in the top-right of the voxel canvas. It should show colored `x`, `y`, and `z` axes, colored rotation arcs, and clickable colored ball joints for the six signed orthogonal views; dragging along a colored arc should rotate the view around the corresponding axis as a direct manipulation affordance.
+- Frequently used 3D inspection controls, including object visibility, projected-panel visibility, voxel outline mode, projected mode, and gizmo surface navigation, should remain reachable from the voxel scene itself without requiring the user to scroll away from the canvas.
+- Canvas-local controls should be compact and modern rather than a large multi-row button block. The preferred direction is a small toolbar or clustered icon/segmented controls with concise labels, predictable pressed states, and enough hit area to operate comfortably without covering the voxel scene.
 - Voxel rendering should default to compact packed cubes with no visual gaps between adjacent voxels.
 - The viewer should provide a display-mode toggle for showing individual cube outlines versus rendering same-color adjacent voxels as visually continuous blocks; this is a rendering preference only and must not change voxel occupancy or validation data.
+- The viewer should provide a `Projected` display toggle that shows only the voxels implied or shaped by the currently visible projected panels. This mode should attempt to assign voxel colors from surface-visible panel pixels, flag color conflicts only when visible panel evidence constrains the same projected surface voxel to incompatible colors, and remain an inspection aid that does not overwrite the canonical voxel candidate or validation result.
+- Pixel-level conflict resolution through a pixel editor is a planned feature after projected-mode inspection can reliably identify conflicts; direct pixel editing is not required in the current inspection slice.
 
 ### Reconstruction
 
@@ -164,8 +172,9 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 - The system reports whether the candidate is valid, invalid, or ambiguous.
 - Validation should include geometry and appearance rules appropriate to the current object class, such as recognizability, connectivity, watertightness, silhouette consistency, coherent colors/materials, unsupported floating voxels, volume bounds, and simple symmetry constraints.
-- Human review should include the source views, rotatable slice workspace, rendered voxel preview, snap-to orthogonal views, and validation report.
+- Human review should include the source views, rotatable slice workspace, rendered voxel preview, gizmo-driven orthogonal surface selection, and validation report.
 - Validation review should explain color/material conflicts in plain terms, especially when axis-only visual-hull reconstruction matches silhouettes but cannot infer hidden or conflicting surface colors.
+- Projected-mode review should separately flag color conflicts introduced by the currently visible panel set so users can tell the difference between canonical candidate validation failures and active-panel projection conflicts.
 
 ### First benchmark: swirl voxel sphere
 
@@ -185,7 +194,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 ## J. Output, reporting, and integration contract
 
-- **Human output:** side-by-side view of prompt/template, uploaded 2D grid, parsed view panels, rotatable slice workspace, voxel reconstruction, color/material preview, snap-to profile views, and validation result.
+- **Human output:** side-by-side view of prompt/template, uploaded 2D grid, parsed view panels, rotatable slice workspace, voxel reconstruction, color/material preview, gizmo-driven orthogonal surface selection, and validation result.
 - **Machine output:** schema version, run metadata, template id/config, grid size configuration, slice/view slot definitions, source image references, parsed panel metadata, voxel volume data, material/color data, validation status, and failure reasons.
 - **Integration boundaries:** later exporters or game-engine integrations should consume only validated voxel candidates, not raw generated images.
 - **Persistence contract:** local JSON export/import is part of the v0 workflow so grid templates, benchmark cases, and failed runs can be replayed without a backend.
@@ -198,8 +207,9 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Add image-generated cases only after the fixture path can pass and fail predictably.
 - Include the swirl voxel sphere as an early fixture and uploaded-grid benchmark.
 - Validate the core pipeline with deterministic unit tests before relying on browser smoke tests or visual inspection.
-- Use browser-level checks for upload flow, layout, nonblank voxel rendering, rotatable slice-grid rendering, snap-to camera views, saved template round trips, and mismatch overlays once the UI exists.
-- Browser-level 3D inspection checks should cover free orbit after snap views, visibility of the orientation gizmo, reachability of scene controls without scrolling away from the voxel canvas, compact/no-gap voxel rendering, and the cube-outline display toggle.
+- Use browser-level checks for upload flow, layout, nonblank voxel rendering, rotatable slice-grid rendering, gizmo-driven orthogonal surface selection, saved template round trips, and mismatch overlays once the UI exists.
+- Browser-level 3D inspection checks should cover free orbit before and after gizmo ball-joint orthogonal transitions, animated surface transitions from gizmo ball joints, visibility of the top-right orientation gizmo, reachability of scene controls without scrolling away from the voxel canvas, compact/no-gap voxel rendering, the cube-outline display toggle, six signed panel visibility toggles, the `Projected` display toggle, projected color assignment from surface-visible panel pixels, projected color-conflict reporting, and surface-label updates when gizmo ball joints are used.
+- Browser-level 3D inspection checks should also cover signed panel alignment from representative front/back/left/right/top/bottom camera views, the interactive rotation-arc behavior of the top-right gizmo, and control overlay footprint so the toolbar does not dominate or obscure the primary voxel scene.
 - Maintain benchmark tiers:
   - Tier 1: simple geometric solids and combinations, including the swirl voxel sphere.
   - Tier 2: voxelized icons and simple props.
@@ -235,8 +245,14 @@ tt2. [action] Define the first configurable multi-view grid template and JSON/Zo
 tt3. [iterate] Test whether axis-only, axis-plus-diagonal, or axis-plus-cross-section grid inputs produce the best validity rate for simple geometry.
 tt4. [risk] Animal generation may require richer constraints than side views can provide, causing attractive but structurally invalid voxel outputs.
 tt5. [deferred] Add external image generation API support after saved/uploaded image workflows and template prompts are useful.
-tt6. [action] Prototype the rotatable slice workspace and reconstructed voxel model viewer with snap-to orthogonal camera controls.
-tt7. [action] Stabilize voxel scene inspection UX with an `x/y/z` orientation gizmo, canvas-local controls, compact no-gap voxel rendering, and cube-outline display mode.
+tt6. [action] Refactor the rotatable slice workspace and reconstructed voxel model viewer so panel visibility controls and camera orientation controls are separate UI concepts.
+tt7. [action] Stabilize voxel scene inspection UX with a top-right `x/y/z` orientation gizmo, canvas-local controls, compact no-gap voxel rendering, and cube-outline display mode.
+tt8. [action] Add six signed projected panels, per-surface visibility state, and gizmo-driven signed orthogonal surface transitions with current-surface labeling.
+tt9. [action] Add a `Projected` display mode that previews the voxel hull implied by the currently visible projected panels, assigns colors from visible panel pixels, and reports color conflicts without mutating the canonical voxel candidate.
+tt10. [deferred] Add a pixel editor for resolving projected-panel color conflicts after projected-mode conflict detection is reliable.
+tt11. [action] Correct signed panel placement and orientation so all six projected panels line up with their corresponding voxel-volume sides.
+tt12. [iterate] Replace the oversized canvas control block with a compact modern control surface that keeps the voxel scene visually primary.
+tt13. [iterate] Upgrade the top-right orientation gizmo into a Blender-style combination gizmo with colored axes, draggable rotation arcs, and clickable ball joints for signed orthogonal surface views.
 
 ---
 
@@ -249,6 +265,16 @@ No open questions.
 d1. The free-rotate workspace remains upload/inspect/template-only for v0; direct voxel or slice editing is planned after reconstruction and validation are reliable.
 d2. The grid view should support various slice selections, including non-center slices, not only orthogonal view slices or 45-degree slices through center mass.
 d3. First-class saved-template grid size presets are `16`, `32`, and `64`; arbitrary dimensions are planned later.
-d4. Initial snap views are front, side, and top; back, bottom, diagonal, and target-slice snap views are planned after the base camera path works.
+d4. Surface buttons in the voxel scene control projected-panel visibility, not camera movement. Orthogonal camera navigation is driven by the top-right gizmo with explicit current-surface labeling.
 d5. Voxel scene controls should be available near or over the canvas instead of only below later page content, because scroll-dependent controls make inspection workflows harder to use.
 d6. Compact packed voxel rendering with no gaps is the preferred default; cube outlines are an optional display mode for reading individual voxel boundaries.
+d7. The initial orthogonal surface set is the full six signed exterior set: `front`, `back`, `left`, `right`, `top`, and `bottom`; diagonal and target-slice camera views remain deferred.
+d8. The orientation gizmo belongs in the top-right of the voxel canvas.
+d9. Surface visibility controls should expose all six surfaces directly, without relying on grouped controls such as `Side`.
+d10. Orthogonal surface navigation should live in the top-right gizmo. Clicking a ball joint should animate to that signed surface, show the surface label below the gizmo, and leave free orbit rotation available afterward.
+d11. The separate `Orthogonal View` toggle and arrow controls are deprecated by the ball-joint gizmo model and should be removed from the primary control surface.
+d12. `Projected` display mode should preview only the voxels implied by currently visible projected panels, assign colors from surface-visible panel pixels where possible, flag conflicts from incompatible visible-panel evidence on the same projected surface voxel, and avoid changing the canonical voxel candidate or validation data.
+d13. Pixel-level editing for resolving projected-panel color conflicts is planned but deferred until projected-mode conflict detection is reliable.
+d14. All six projected panels must be visually aligned with the voxel volume side they represent; panel misalignment is a stability bug, not a cosmetic issue.
+d15. The top-right gizmo should evolve from an informational axis marker into an interactive Blender-style combination gizmo with drag rotation along colored arcs.
+d16. The current large canvas-local control footprint is not acceptable long term; inspection controls should be redesigned into a compact modern toolbar/control cluster.
