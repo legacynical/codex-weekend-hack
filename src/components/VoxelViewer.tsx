@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { createSwirlSphere } from "@/benchmarks/swirlSphere";
 import { Button } from "@/components/ui/button";
 import type { ViewPanel } from "@/core/panels";
 import { projectVolumeToAxisPanels } from "@/core/projection";
+import type { VoxelVolume } from "@/core/voxel";
+import { VoxelScene } from "@/rendering/voxelScene";
 
 const snapViews = [
   { label: "Front", value: "front", axis: "y" },
@@ -26,7 +28,8 @@ export function VoxelViewer() {
 
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
-      <div className="bg-muted" data-testid="voxel-viewer">
+      <VoxelCanvas volume={benchmark.volume} activeView={activeView} />
+      <div className="border-t bg-muted" data-testid="voxel-viewer">
         <SliceWorkspacePreview panels={benchmark.panels} activeView={activeView} />
       </div>
       <div className="grid gap-3 border-t bg-card px-4 py-3 sm:grid-cols-3">
@@ -54,6 +57,64 @@ export function VoxelViewer() {
         </div>
       </div>
     </div>
+  );
+}
+
+function VoxelCanvas({
+  volume,
+  activeView,
+}: {
+  volume: VoxelVolume;
+  activeView: SnapView;
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const sceneRef = useRef<VoxelScene | null>(null);
+  const initialViewRef = useRef(activeView);
+  const [status, setStatus] = useState<"ready" | "unavailable">("ready");
+
+  useEffect(() => {
+    if (!hostRef.current) {
+      return;
+    }
+
+    try {
+      const scene = new VoxelScene(hostRef.current, { volume, initialView: initialViewRef.current });
+      sceneRef.current = scene;
+
+      return () => {
+        scene.dispose();
+        sceneRef.current = null;
+      };
+    } catch {
+      queueMicrotask(() => setStatus("unavailable"));
+      sceneRef.current = null;
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    sceneRef.current?.snapTo(activeView);
+  }, [activeView]);
+
+  return (
+    <section className="grid gap-0 bg-card" aria-label="3D voxel view">
+      <div
+        ref={hostRef}
+        className="h-[340px] overflow-hidden bg-[#172022] sm:h-[420px]"
+        data-testid="voxel-canvas-host"
+      >
+        {status === "unavailable" ? (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-primary-foreground/80">
+            3D unavailable
+          </div>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-between border-t bg-background/90 px-4 py-2">
+        <span className="text-xs font-medium">3D voxel view</span>
+        <span className="text-xs text-muted-foreground">
+          {status === "ready" ? "3D ready" : "3D unavailable"}
+        </span>
+      </div>
+    </section>
   );
 }
 
