@@ -1,6 +1,6 @@
 # Product requirements
 
-Last verified: 2026-05-02 11:35 PM PDT
+Last verified: 2026-05-02 11:47 PM PDT
 Source-of-truth for: product goals, scope, user-facing rules, and decision-rich intent for implementers
 
 > Purpose: capture settled product behavior and requirements. Do not treat guesswork as decisions; record uncertainty, conflicts, and owner decisions in Open questions (`oqN.` handles). Audience: project owner, future humans, and agent implementers.
@@ -152,14 +152,17 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Orthogonal camera navigation should be exposed through the orientation gizmo rather than a separate mode toggle or arrow-control cluster.
 - Clicking a gizmo ball joint should animate the camera to the corresponding signed orthogonal surface: `front`, `back`, `left`, `right`, `top`, or `bottom`.
 - The active surface text label should appear below the gizmo after a ball-joint selection so users know which orthogonal face is in view.
-- Free camera rotation should remain available like Blender after any orthogonal surface transition; orthogonal selection should not leave the viewer in a locked or pan-only state.
+- Free camera rotation should remain available like Blender after any orthogonal surface transition, projected-mode toggle, panel-visibility change, or gizmo interaction; the perspective viewer must never remain in a locked, pan-only, or disabled-control state after a completed interaction.
 - Dedicated orthogonal-view toggle and arrow controls are deprecated and should be removed cleanly once ball-joint navigation is available.
-- The 3D voxel scene should include an always-visible Blender-style combination orientation gizmo in the top-right of the voxel canvas. It should show colored `x`, `y`, and `z` axes, colored rotation arcs, and clickable colored ball joints for the six signed orthogonal views; dragging along a colored arc should rotate the view around the corresponding axis as a direct manipulation affordance.
+- The 3D voxel scene should include an always-visible Blender-style navigation/orientation gizmo in the top-right of the voxel canvas. It should prioritize camera navigation behavior over object-transform behavior: drag the center/orbit ball to orbit in perspective view, click a signed axis target to align to that surface, and keep the main canvas orbitable afterward.
+- The gizmo should use Blender-like polish as a reference point: `X` red, `Y` green, and `Z` blue; large clickable ball targets instead of arrowheads; labels rendered on the positive-axis balls themselves; a center orbit ball that can be grabbed/click-dragged for free perspective rotation; dimmer/opposing signed targets for the negative sides; clean hover/pressed states; and no oversized frame that competes with the voxel scene.
+- Perspective free-rotate regressions require root-cause investigation before being closed. Known risk: forcing a camera up vector that is parallel to the active view direction can produce a degenerate camera basis and make orbit controls appear stuck, especially after front/back orthogonal transitions.
 - Frequently used 3D inspection controls, including object visibility, projected-panel visibility, voxel outline mode, projected mode, and gizmo surface navigation, should remain reachable from the voxel scene itself without requiring the user to scroll away from the canvas.
 - Canvas-local controls should be compact and modern rather than a large multi-row button block. The preferred direction is a small toolbar or clustered icon/segmented controls with concise labels, predictable pressed states, and enough hit area to operate comfortably without covering the voxel scene.
 - Voxel rendering should default to compact packed cubes with no visual gaps between adjacent voxels.
 - The viewer should provide a display-mode toggle for showing individual cube outlines versus rendering same-color adjacent voxels as visually continuous blocks; this is a rendering preference only and must not change voxel occupancy or validation data.
 - The viewer should provide a `Projected` display toggle that shows only the voxels implied or shaped by the currently visible projected panels. This mode should attempt to assign voxel colors from surface-visible panel pixels, flag color conflicts only when visible panel evidence constrains the same projected surface voxel to incompatible colors, and remain an inspection aid that does not overwrite the canonical voxel candidate or validation result.
+- A projected hull reconstructed from the benchmark's own six signed surface panels should not report thousands of color conflicts by default. If the swirl sphere's own canonical panels still produce projected conflicts, the UI should treat that as a reconstruction/color-assignment bug or an under-specified-projection limitation to resolve before adding new workflows.
 - Pixel-level conflict resolution through a pixel editor is a planned feature after projected-mode inspection can reliably identify conflicts; direct pixel editing is not required in the current inspection slice.
 
 ### Reconstruction
@@ -175,6 +178,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Human review should include the source views, rotatable slice workspace, rendered voxel preview, gizmo-driven orthogonal surface selection, and validation report.
 - Validation review should explain color/material conflicts in plain terms, especially when axis-only visual-hull reconstruction matches silhouettes but cannot infer hidden or conflicting surface colors.
 - Projected-mode review should separately flag color conflicts introduced by the currently visible panel set so users can tell the difference between canonical candidate validation failures and active-panel projection conflicts.
+- Projected-mode conflict counts must be explainable and benchmark-calibrated. The canonical swirl sphere panels should produce either zero conflicts or a small, documented ambiguity class with examples; an unexplained high count such as `1548` should fail stability review.
 
 ### First benchmark: swirl voxel sphere
 
@@ -208,7 +212,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Include the swirl voxel sphere as an early fixture and uploaded-grid benchmark.
 - Validate the core pipeline with deterministic unit tests before relying on browser smoke tests or visual inspection.
 - Use browser-level checks for upload flow, layout, nonblank voxel rendering, rotatable slice-grid rendering, gizmo-driven orthogonal surface selection, saved template round trips, and mismatch overlays once the UI exists.
-- Browser-level 3D inspection checks should cover free orbit before and after gizmo ball-joint orthogonal transitions, animated surface transitions from gizmo ball joints, visibility of the top-right orientation gizmo, reachability of scene controls without scrolling away from the voxel canvas, compact/no-gap voxel rendering, the cube-outline display toggle, six signed panel visibility toggles, the `Projected` display toggle, projected color assignment from surface-visible panel pixels, projected color-conflict reporting, and surface-label updates when gizmo ball joints are used.
+- Browser-level 3D inspection checks should cover actual camera position changes from free orbit before and after gizmo ball-joint orthogonal transitions, projected-mode toggles, panel visibility toggles, and repeated drag interactions; center-gizmo drag behavior; animated surface transitions from gizmo ball joints; visibility of the top-right orientation gizmo; reachability of scene controls without scrolling away from the voxel canvas; compact/no-gap voxel rendering; the cube-outline display toggle; six signed panel visibility toggles; the `Projected` display toggle; projected color assignment from surface-visible panel pixels; projected color-conflict reporting; and surface-label updates when gizmo ball joints are used.
 - Browser-level 3D inspection checks should also cover signed panel alignment from representative front/back/left/right/top/bottom camera views, the interactive rotation-arc behavior of the top-right gizmo, and control overlay footprint so the toolbar does not dominate or obscure the primary voxel scene.
 - Maintain benchmark tiers:
   - Tier 1: simple geometric solids and combinations, including the swirl voxel sphere.
@@ -235,6 +239,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - [Documentation index](./_index.md)
 - [Tech stack](./tech-stack.md)
 - [Multi-view voxel reconstruction from 2D image grids](./research/multi-view-voxel-reconstruction.md)
+- [Blender navigation gizmo reference](./research/blender-navigation-gizmo.md)
 
 ---
 
@@ -253,6 +258,10 @@ tt10. [deferred] Add a pixel editor for resolving projected-panel color conflict
 tt11. [action] Correct signed panel placement and orientation so all six projected panels line up with their corresponding voxel-volume sides.
 tt12. [iterate] Replace the oversized canvas control block with a compact modern control surface that keeps the voxel scene visually primary.
 tt13. [iterate] Upgrade the top-right orientation gizmo into a Blender-style combination gizmo with colored axes, draggable rotation arcs, and clickable ball joints for signed orthogonal surface views.
+tt14. [action] Fix the perspective free-rotate regression so viewport drag never gets stuck after gizmo, projected-mode, panel, or surface-selection interactions.
+tt15. [action] Investigate and reduce the `1548` projected color conflicts from canonical swirl sphere panels; document any remaining expected ambiguity with example voxels and panel evidence.
+tt16. [iterate] Redesign the gizmo visual model around larger ball targets that replace arrowheads, labels above positive-axis balls, hover/pressed states, and Blender-like navigation behavior.
+tt17. [action] Add instrumentation and regression coverage that proves perspective drags change camera position after front/back/top/bottom/right/left gizmo transitions, not only that OrbitControls emits events.
 
 ---
 
@@ -278,3 +287,7 @@ d13. Pixel-level editing for resolving projected-panel color conflicts is planne
 d14. All six projected panels must be visually aligned with the voxel volume side they represent; panel misalignment is a stability bug, not a cosmetic issue.
 d15. The top-right gizmo should evolve from an informational axis marker into an interactive Blender-style combination gizmo with drag rotation along colored arcs.
 d16. The current large canvas-local control footprint is not acceptable long term; inspection controls should be redesigned into a compact modern toolbar/control cluster.
+d17. The Blender navigation gizmo, not the object transform gizmo, is the closer behavioral reference for this viewer: drag orbits the view, clicking axis labels/balls aligns the view, and the camera remains freely orbitable after alignment.
+d18. The current `1548` projected color conflicts in the canonical swirl sphere are not accepted as expected behavior without deeper proof; the next implementation pass should treat them as a bug or unresolved projection-model limitation.
+d19. A likely root cause of the repeated perspective-rotate lock is camera-up handling: resetting `camera.up` to world Y while the camera is looking along the Y axis can make the up vector parallel to the view direction and destabilize OrbitControls.
+d20. Gizmo labels should be rendered on the positive-axis balls themselves, and the center ball should be an active orbit affordance rather than decorative geometry.
