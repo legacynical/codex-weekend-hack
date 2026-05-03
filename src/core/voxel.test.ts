@@ -39,6 +39,19 @@ describe("swirl sphere benchmark", () => {
     expect(getPanelPixel(panels[0] as ViewPanel, 0, 0).occupied).toBe(false);
   });
 
+  it("keeps the 16 preset projected panels stable for inspection", () => {
+    const sphere = createSwirlSphere({ x: 16, y: 16, z: 16 });
+    const panels = projectVolumeToAxisPanels(sphere);
+
+    expect(panels.map((panel) => [panel.id, panel.width, panel.height])).toEqual([
+      ["side-x", 16, 16],
+      ["front-y", 16, 16],
+      ["top-z", 16, 16],
+    ]);
+    expect(panels.every((panel) => panel.pixels.some((pixel) => pixel.occupied && pixel.color))).toBe(true);
+    expect(panels.every((panel) => panel.pixels.some((pixel) => !pixel.occupied))).toBe(true);
+  });
+
   it("reconstructs a visual-hull candidate that matches source silhouettes", () => {
     const sphere = createSwirlSphere({ x: 8, y: 8, z: 8 });
     const panels = projectVolumeToAxisPanels(sphere);
@@ -64,6 +77,19 @@ describe("swirl sphere benchmark", () => {
     expect(corruptedReport.geometry.silhouetteMismatches).toEqual([]);
     expect(corruptedReport.color.coherent).toBe(false);
     expect(corruptedReport.failureReasons).toContain("Surface colors conflict with projected panels");
+  });
+
+  it("keeps the benchmark validation lanes aligned with current UI labels", () => {
+    const sphere = createSwirlSphere({ x: 16, y: 16, z: 16 });
+    const panels = projectVolumeToAxisPanels(sphere);
+    const reconstructed = reconstructVisualHull(sphere.size, panels);
+    const report = validateVoxelCandidate(reconstructed, panels);
+
+    expect(report.geometry.silhouetteMismatches).toEqual([]);
+    expect(report.geometry.connected).toBe(true);
+    expect(report.geometry.watertight).toBe(true);
+    expect(report.color.coherent).toBe(false);
+    expect(report.color.mismatches.length).toBeGreaterThan(0);
   });
 
   it("detects enclosed voids as a watertightness failure", () => {
