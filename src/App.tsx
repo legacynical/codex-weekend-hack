@@ -1,4 +1,5 @@
-import { Box, CheckCircle2, Layers3, Palette, PanelTop, Upload } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Box, CheckCircle2, Download, Layers3, Palette, PanelTop, Upload } from "lucide-react";
 
 import { createSwirlSphere } from "@/benchmarks/swirlSphere";
 import { VoxelViewer } from "@/components/VoxelViewer";
@@ -14,6 +15,12 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { projectVolumeToAxisPanels, reconstructVisualHull } from "@/core/projection";
+import {
+  downloadGridTemplatePng,
+  getTemplateImageMetrics,
+  gridTemplateSizes,
+  type GridTemplateSize,
+} from "@/templates/templateImage";
 import { validateVoxelCandidate } from "@/validation/voxelValidation";
 
 const workflow = [
@@ -47,7 +54,17 @@ const lanes = [
   },
 ] as const;
 
+const assetTabs = ["templates", "uploads"] as const;
+type AssetTab = (typeof assetTabs)[number];
+
+const faceSlots = ["front", "back", "left", "right", "top", "bottom"] as const;
+type FaceSlot = (typeof faceSlots)[number];
+
 function App() {
+  const [activeAssetTab, setActiveAssetTab] = useState<AssetTab>("templates");
+  const [uploadResolution, setUploadResolution] = useState<GridTemplateSize>(16);
+  const [uploadedSlotNames, setUploadedSlotNames] = useState<Partial<Record<FaceSlot, string>>>({});
+
   return (
     <main className="min-h-svh bg-background text-foreground">
       <section className="mx-auto flex min-h-svh w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
@@ -91,6 +108,45 @@ function App() {
           </section>
 
           <aside className="grid gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Assets</CardTitle>
+                <CardDescription>Grid templates and face image slots</CardDescription>
+                <CardAction>
+                  <Badge variant="outline" className="font-normal">
+                    {activeAssetTab}
+                  </Badge>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="grid gap-4" data-testid="assets-card">
+                <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1" aria-label="Asset tabs">
+                  {assetTabs.map((tab) => (
+                    <Button
+                      key={tab}
+                      type="button"
+                      variant={activeAssetTab === tab ? "default" : "ghost"}
+                      size="sm"
+                      aria-pressed={activeAssetTab === tab}
+                      onClick={() => setActiveAssetTab(tab)}
+                    >
+                      {tab === "templates" ? "Templates" : "Uploads"}
+                    </Button>
+                  ))}
+                </div>
+                {activeAssetTab === "templates" ? <TemplateDownloads /> : null}
+                {activeAssetTab === "uploads" ? (
+                  <UploadSlots
+                    resolution={uploadResolution}
+                    uploadedSlotNames={uploadedSlotNames}
+                    onResolutionChange={setUploadResolution}
+                    onSlotFileChange={(slot, fileName) =>
+                      setUploadedSlotNames((current) => ({ ...current, [slot]: fileName }))
+                    }
+                  />
+                ) : null}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>Benchmark pipeline</CardTitle>
@@ -147,3 +203,114 @@ function App() {
 }
 
 export default App;
+
+function TemplateDownloads() {
+  return (
+    <div className="grid gap-3" data-testid="template-downloads-tab">
+      {gridTemplateSizes.map((size) => (
+        <TemplateDownloadItem key={size} size={size} />
+      ))}
+    </div>
+  );
+}
+
+function TemplateDownloadItem({ size }: { size: GridTemplateSize }) {
+  const metrics = useMemo(() => getTemplateImageMetrics(size), [size]);
+
+  return (
+    <div className="grid gap-3 rounded-md border bg-background p-3 sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:items-center">
+      <SquareGridPreview size={size} />
+      <div className="grid gap-1">
+        <span className="text-sm font-medium">{size} x {size} grid</span>
+        <span className="text-xs text-muted-foreground">
+          {metrics.width} x {metrics.height} PNG, {metrics.cellPixels}px cells
+        </span>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        data-testid={`template-download-${size}`}
+        onClick={() => downloadGridTemplatePng(size)}
+      >
+        <Download className="size-4" aria-hidden="true" />
+        PNG
+      </Button>
+    </div>
+  );
+}
+
+function UploadSlots({
+  resolution,
+  uploadedSlotNames,
+  onResolutionChange,
+  onSlotFileChange,
+}: {
+  resolution: GridTemplateSize;
+  uploadedSlotNames: Partial<Record<FaceSlot, string>>;
+  onResolutionChange: (resolution: GridTemplateSize) => void;
+  onSlotFileChange: (slot: FaceSlot, fileName: string) => void;
+}) {
+  return (
+    <div className="grid gap-4" data-testid="upload-slots-tab">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-medium">Configured resolution</span>
+        <div className="flex gap-1" aria-label="Upload slot resolution">
+          {gridTemplateSizes.map((size) => (
+            <Button
+              key={size}
+              type="button"
+              variant={resolution === size ? "default" : "outline"}
+              size="xs"
+              aria-pressed={resolution === size}
+              onClick={() => onResolutionChange(size)}
+            >
+              {size}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {faceSlots.map((slot) => (
+          <label key={slot} className="grid gap-2 rounded-md border bg-background p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium capitalize">{slot}</span>
+              <Badge variant="outline" className="font-normal">
+                {resolution} x {resolution}
+              </Badge>
+            </div>
+            <input
+              className="sr-only"
+              type="file"
+              accept="image/png,image/webp,image/jpeg"
+              aria-label={`${slot} face image`}
+              onChange={(event) => onSlotFileChange(slot, event.currentTarget.files?.[0]?.name ?? "")}
+            />
+            <span className="inline-flex h-7 items-center justify-center rounded-md border bg-muted px-2 text-xs font-medium">
+              {uploadedSlotNames[slot] || "Choose image"}
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SquareGridPreview({ size }: { size: GridTemplateSize }) {
+  const gridLine = "rgba(15, 118, 110, 0.28)";
+
+  return (
+    <div
+      className="aspect-square overflow-hidden rounded-sm border bg-background"
+      data-testid={`template-grid-preview-${size}`}
+      style={{
+        backgroundImage: [
+          `linear-gradient(to right, ${gridLine} 1px, transparent 1px)`,
+          `linear-gradient(to bottom, ${gridLine} 1px, transparent 1px)`,
+        ].join(", "),
+        backgroundSize: `calc(100% / ${size}) calc(100% / ${size})`,
+      }}
+      aria-label={`${size} square grid preview`}
+    />
+  );
+}
