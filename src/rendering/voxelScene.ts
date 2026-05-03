@@ -1,6 +1,5 @@
 import {
   AmbientLight,
-  ArrowHelper,
   BoxGeometry,
   BufferGeometry,
   CanvasTexture,
@@ -109,6 +108,8 @@ export class VoxelScene {
     this.renderer.domElement.addEventListener("pointermove", this.handleGizmoPointerMove, true);
     this.renderer.domElement.addEventListener("pointerup", this.handleGizmoPointerUp, true);
     this.renderer.domElement.addEventListener("pointercancel", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.addEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
+    window.addEventListener("pointerup", this.handleGizmoPointerUp, true);
     this.host.append(this.renderer.domElement);
 
     this.camera = new PerspectiveCamera(45, 1, 0.1, 1000);
@@ -243,6 +244,8 @@ export class VoxelScene {
     this.renderer.domElement.removeEventListener("pointermove", this.handleGizmoPointerMove, true);
     this.renderer.domElement.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
     this.renderer.domElement.removeEventListener("pointercancel", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.removeEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
+    window.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -273,6 +276,9 @@ export class VoxelScene {
 
     this.renderer.setScissorTest(false);
     this.renderer.setViewport(0, 0, width, height);
+    this.renderer.domElement.dataset.cameraPosition = vectorDatasetValue(this.camera.position);
+    this.renderer.domElement.dataset.cameraUp = vectorDatasetValue(this.camera.up);
+    this.renderer.domElement.dataset.controlsEnabled = String(this.controls.enabled);
     this.renderer.render(this.scene, this.camera);
     this.renderGizmo(width, height);
   }
@@ -291,15 +297,16 @@ export class VoxelScene {
     this.gizmoRoot.add(createGizmoArc("x", "#ef4444"));
     this.gizmoRoot.add(createGizmoArc("y", "#22c55e"));
     this.gizmoRoot.add(createGizmoArc("z", "#3b82f6"));
-    this.gizmoRoot.add(createGizmoBall("right", new Vector3(1.28, 0, 0), "#ef4444"));
-    this.gizmoRoot.add(createGizmoBall("left", new Vector3(-1.28, 0, 0), "#ef4444"));
-    this.gizmoRoot.add(createGizmoBall("back", new Vector3(0, 1.28, 0), "#22c55e"));
-    this.gizmoRoot.add(createGizmoBall("front", new Vector3(0, -1.28, 0), "#22c55e"));
-    this.gizmoRoot.add(createGizmoBall("top", new Vector3(0, 0, 1.28), "#3b82f6"));
-    this.gizmoRoot.add(createGizmoBall("bottom", new Vector3(0, 0, -1.28), "#3b82f6"));
-    this.gizmoRoot.add(createGizmoArrow("x", new Vector3(1, 0, 0), "#ef4444"));
-    this.gizmoRoot.add(createGizmoArrow("y", new Vector3(0, 1, 0), "#22c55e"));
-    this.gizmoRoot.add(createGizmoArrow("z", new Vector3(0, 0, 1), "#3b82f6"));
+    this.gizmoRoot.add(createGizmoAxis("x", new Vector3(1, 0, 0), "#ef4444"));
+    this.gizmoRoot.add(createGizmoAxis("y", new Vector3(0, 1, 0), "#22c55e"));
+    this.gizmoRoot.add(createGizmoAxis("z", new Vector3(0, 0, 1), "#3b82f6"));
+    this.gizmoRoot.add(createGizmoCenterBall());
+    this.gizmoRoot.add(createGizmoBall("right", "X", new Vector3(1.22, 0, 0), "#ef4444", "primary"));
+    this.gizmoRoot.add(createGizmoBall("left", null, new Vector3(-1.22, 0, 0), "#ef4444", "secondary"));
+    this.gizmoRoot.add(createGizmoBall("back", "Y", new Vector3(0, 1.22, 0), "#22c55e", "primary"));
+    this.gizmoRoot.add(createGizmoBall("front", null, new Vector3(0, -1.22, 0), "#22c55e", "secondary"));
+    this.gizmoRoot.add(createGizmoBall("top", "Z", new Vector3(0, 0, 1.22), "#3b82f6", "primary"));
+    this.gizmoRoot.add(createGizmoBall("bottom", null, new Vector3(0, 0, -1.22), "#3b82f6", "secondary"));
     this.gizmoScene.add(this.gizmoRoot);
   }
 
@@ -367,10 +374,17 @@ export class VoxelScene {
 
     event.preventDefault();
     event.stopPropagation();
-    this.renderer.domElement.releasePointerCapture(event.pointerId);
+    this.finishGizmoDrag(event.pointerId);
+  };
+
+  private finishGizmoDrag(pointerId?: number): void {
+    if (pointerId !== undefined && this.renderer.domElement.hasPointerCapture(pointerId)) {
+      this.renderer.domElement.releasePointerCapture(pointerId);
+    }
+
     this.activeGizmoDrag = null;
     this.controls.enabled = true;
-  };
+  }
 
   private rotateCameraAround(axis: Vector3, angle: number): void {
     const target = this.controls.target;
@@ -603,25 +617,55 @@ function createPanelTexture(panel: ViewPanel): CanvasTexture {
   return texture;
 }
 
-function createGizmoArrow(label: "x" | "y" | "z", direction: Vector3, color: string): Group {
-  const group = new Group();
-  group.add(new ArrowHelper(direction, new Vector3(0, 0, 0), 1.12, color, 0.22, 0.14));
+function createGizmoAxis(_axis: "x" | "y" | "z", direction: Vector3, color: string): LineSegments {
+  const positions = [0, 0, 0, direction.x * 1.02, direction.y * 1.02, direction.z * 1.02];
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  const material = new LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.82,
+  });
 
-  const labelSprite = createGizmoLabel(label, color);
-  labelSprite.position.copy(direction.clone().multiplyScalar(1.42));
-  group.add(labelSprite);
-
-  return group;
+  return new LineSegments(geometry, material);
 }
 
-function createGizmoBall(surface: SurfaceView, position: Vector3, color: string): Mesh {
-  const material = new MeshBasicMaterial({ color });
-  const ball = new Mesh(new SphereGeometry(0.14, 18, 14), material);
+function createGizmoCenterBall(): Mesh {
+  const material = new MeshBasicMaterial({
+    color: "#f8fafc",
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  return new Mesh(new SphereGeometry(0.16, 24, 16), material);
+}
+
+function createGizmoBall(
+  surface: SurfaceView,
+  label: "X" | "Y" | "Z" | null,
+  position: Vector3,
+  color: string,
+  tone: "primary" | "secondary",
+): Group {
+  const group = new Group();
+  const material = new MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: tone === "primary" ? 1 : 0.48,
+  });
+  const ball = new Mesh(new SphereGeometry(tone === "primary" ? 0.24 : 0.18, 24, 16), material);
 
   ball.position.copy(position);
   ball.userData.surface = surface;
+  group.add(ball);
 
-  return ball;
+  if (label) {
+    const labelSprite = createGizmoLabel(label, "#ffffff");
+    labelSprite.position.copy(position);
+    group.add(labelSprite);
+  }
+
+  return group;
 }
 
 function createGizmoArc(axis: "x" | "y" | "z", color: string): LineSegments {
@@ -673,8 +717,12 @@ function createGizmoLabel(label: string, color: string): Sprite {
     throw new Error(`Could not create gizmo label ${label}`);
   }
 
+  context.fillStyle = "rgba(0,0,0,0.45)";
+  context.beginPath();
+  context.arc(32, 32, 24, 0, Math.PI * 2);
+  context.fill();
   context.fillStyle = color;
-  context.font = "700 42px sans-serif";
+  context.font = "800 40px sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillText(label, 32, 32);
@@ -683,7 +731,7 @@ function createGizmoLabel(label: string, color: string): Sprite {
   texture.needsUpdate = true;
   const material = new SpriteMaterial({ map: texture, transparent: true });
   const sprite = new Sprite(material);
-  sprite.scale.set(0.42, 0.42, 0.42);
+  sprite.scale.set(0.34, 0.34, 0.34);
   sprite.userData.texture = texture;
 
   return sprite;
@@ -691,6 +739,10 @@ function createGizmoLabel(label: string, color: string): Sprite {
 
 function centerOf(): Vector3 {
   return new Vector3(0, 0, 0);
+}
+
+function vectorDatasetValue(vector: Vector3): string {
+  return [vector.x, vector.y, vector.z].map((value) => value.toFixed(3)).join(",");
 }
 
 function centerOffset(size: GridSize): GridSize {
