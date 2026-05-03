@@ -7,6 +7,20 @@ export const axisViews = [
   { id: "top-z", axis: "z" },
 ] as const satisfies readonly ProjectionView[];
 
+export const surfaceViews = [
+  { id: "front", axis: "y", surface: "front", direction: -1 },
+  { id: "back", axis: "y", surface: "back", direction: 1 },
+  { id: "left", axis: "x", surface: "left", direction: -1 },
+  { id: "right", axis: "x", surface: "right", direction: 1 },
+  { id: "top", axis: "z", surface: "top", direction: 1 },
+  { id: "bottom", axis: "z", surface: "bottom", direction: -1 },
+] as const satisfies readonly ProjectionView[];
+
+export type ProjectedHullResult = Readonly<{
+  volume: VoxelVolume;
+  colorConflicts: readonly string[];
+}>;
+
 export function projectPoint(point: VoxelPoint, axis: ProjectionView["axis"]): { x: number; y: number } {
   switch (axis) {
     case "x":
@@ -32,6 +46,7 @@ export function panelDimensions(size: GridSize, axis: ProjectionView["axis"]): {
 export function projectVolumeToPanel(volume: VoxelVolume, view: ProjectionView): ViewPanel {
   const { width, height } = panelDimensions(volume.size, view.axis);
   const pixels = Array.from({ length: width * height }, () => ({ occupied: false, color: null as string | null }));
+  const visibleDepth = Array.from({ length: width * height }, () => Number.NEGATIVE_INFINITY);
 
   for (const voxel of volume.voxels) {
     const projected = projectPoint(voxel, view.axis);
@@ -42,8 +57,11 @@ export function projectVolumeToPanel(volume: VoxelVolume, view: ProjectionView):
       throw new RangeError(`Projected voxel ${voxel.x},${voxel.y},${voxel.z} outside ${view.id}`);
     }
 
-    if (!pixel.occupied) {
+    const depth = view.direction ? surfaceDepth(voxel, view.axis, view.direction, volume.size) : 0;
+
+    if (!pixel.occupied || depth > visibleDepth[pixelIndex]) {
       pixels[pixelIndex] = { occupied: true, color: voxel.color };
+      visibleDepth[pixelIndex] = depth;
     }
   }
 
@@ -59,24 +77,48 @@ export function projectVolumeToAxisPanels(volume: VoxelVolume): ViewPanel[] {
   return axisViews.map((view) => projectVolumeToPanel(volume, view));
 }
 
+export function projectVolumeToSurfacePanels(volume: VoxelVolume): ViewPanel[] {
+  return surfaceViews.map((view) => projectVolumeToPanel(volume, view));
+}
+
 export function reconstructVisualHull(size: GridSize, panels: readonly ViewPanel[]): VoxelVolume {
-  const voxels = [];
+  return reconstructProjectedHull(size, panels).volume;
+}
+
+export function reconstructProjectedHull(size: GridSize, panels: readonly ViewPanel[]): ProjectedHullResult {
+  const candidatePoints = [];
+  const colorConflicts: string[] = [];
 
   for (let z = 0; z < size.z; z += 1) {
     for (let y = 0; y < size.y; y += 1) {
       for (let x = 0; x < size.x; x += 1) {
         const point = { x, y, z };
-        const projectedPixels = panels.map((panel) => getPanelPixel(panel, projectPoint(point, panel.axis).x, projectPoint(point, panel.axis).y));
+        const projectedPixels = panels.map((panel) => getProjectedPixel(panel, point));
 
         if (projectedPixels.every((pixel) => pixel.occupied)) {
-          const color = projectedPixels.find((pixel) => pixel.color)?.color ?? "#ffffff";
-          voxels.push({ ...point, color });
+          candidatePoints.push(point);
         }
       }
     }
   }
 
-  return { size, voxels };
+  const occupied = new Set(candidatePoints.map((point) => pointKey(point)));
+  const voxels = candidatePoints.map((point) => {
+    const visiblePixels = panels
+      .filter((panel) => isVisibleFromPanel(point, panel, occupied, size))
+      .map((panel) => getProjectedPixel(panel, point));
+    const colorEvidence = visiblePixels.length > 0 ? visiblePixels : panels.map((panel) => getProjectedPixel(panel, point));
+    const colors = [...new Set(colorEvidence.map((pixel) => pixel.color).filter((color): color is string => color !== null))];
+    const color = colors[0] ?? "#ffffff";
+
+    if (colors.length > 1) {
+      colorConflicts.push(`${point.x},${point.y},${point.z}:${colors.join("|")}`);
+    }
+
+    return { ...point, color };
+  });
+
+  return { volume: { size, voxels }, colorConflicts };
 }
 
 export function findSilhouetteMismatches(volume: VoxelVolume, panels: readonly ViewPanel[]): string[] {
@@ -136,4 +178,46 @@ function findFirstVisibleColor(
   }
 
   return null;
+}
+
+function surfaceDepth(point: VoxelPoint, axis: ProjectionView["axis"], direction: -1 | 1, size: GridSize): number {
+  const value = point[axis];
+  const max = size[axis] - 1;
+
+  return direction > 0 ? value : max - value;
+}
+
+function getProjectedPixel(panel: ViewPanel, point: VoxelPoint) {
+  const projected = projectPoint(point, panel.axis);
+
+  return getPanelPixel(panel, projected.x, projected.y);
+}
+
+function isVisibleFromPanel(
+  point: VoxelPoint,
+  panel: ViewPanel,
+  occupied: ReadonlySet<string>,
+  size: GridSize,
+): boolean {
+  if (!panel.direction) {
+    return true;
+  }
+
+  const next = { ...point };
+  const axis = panel.axis;
+  next[axis] += panel.direction;
+
+  while (next[axis] >= 0 && next[axis] < size[axis]) {
+    if (occupied.has(pointKey(next))) {
+      return false;
+    }
+
+    next[axis] += panel.direction;
+  }
+
+  return true;
+}
+
+function pointKey(point: VoxelPoint): string {
+  return `${point.x},${point.y},${point.z}`;
 }

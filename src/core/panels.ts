@@ -4,10 +4,13 @@ export type PanelPixel = Readonly<{
 }>;
 
 export type ViewAxis = "x" | "y" | "z";
+export type SurfaceId = "front" | "back" | "left" | "right" | "top" | "bottom";
 
 export type ProjectionView = Readonly<{
   id: string;
   axis: ViewAxis;
+  surface?: SurfaceId;
+  direction?: -1 | 1;
 }>;
 
 export type ViewPanel = ProjectionView &

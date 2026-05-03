@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import { createSwirlSphere, swirlPalette, swirlSphereColor } from "@/benchmarks/swirlSphere";
 import { getPanelPixel, type ViewPanel } from "@/core/panels";
-import { axisViews, projectVolumeToAxisPanels, reconstructVisualHull } from "@/core/projection";
+import {
+  axisViews,
+  projectVolumeToAxisPanels,
+  projectVolumeToSurfacePanels,
+  reconstructProjectedHull,
+  reconstructVisualHull,
+  surfaceViews,
+} from "@/core/projection";
 import { isInsideSphere, type VoxelVolume } from "@/core/voxel";
 import { axisPlusDiagonalTemplate, gridTemplateSchema } from "@/schemas/template";
 import { hasNoEnclosedVoids, validateVoxelCandidate } from "@/validation/voxelValidation";
@@ -41,15 +48,38 @@ describe("swirl sphere benchmark", () => {
 
   it("keeps the 16 preset projected panels stable for inspection", () => {
     const sphere = createSwirlSphere({ x: 16, y: 16, z: 16 });
-    const panels = projectVolumeToAxisPanels(sphere);
+    const panels = projectVolumeToSurfacePanels(sphere);
 
     expect(panels.map((panel) => [panel.id, panel.width, panel.height])).toEqual([
-      ["side-x", 16, 16],
-      ["front-y", 16, 16],
-      ["top-z", 16, 16],
+      ["front", 16, 16],
+      ["back", 16, 16],
+      ["left", 16, 16],
+      ["right", 16, 16],
+      ["top", 16, 16],
+      ["bottom", 16, 16],
     ]);
+    expect(panels.map((panel) => panel.surface)).toEqual(surfaceViews.map((view) => view.surface));
     expect(panels.every((panel) => panel.pixels.some((pixel) => pixel.occupied && pixel.color))).toBe(true);
     expect(panels.every((panel) => panel.pixels.some((pixel) => !pixel.occupied))).toBe(true);
+  });
+
+  it("reports projected color conflicts from visible panel pixels", () => {
+    const sphere = createSwirlSphere({ x: 8, y: 8, z: 8 });
+    const panels = projectVolumeToSurfacePanels(sphere);
+    const corruptedPanel = corruptFirstResolvedColor([panels[0] as ViewPanel])[0] as ViewPanel;
+    const result = reconstructProjectedHull(sphere.size, [panels[0] as ViewPanel, corruptedPanel]);
+
+    expect(result.volume.voxels.length).toBeGreaterThan(0);
+    expect(result.colorConflicts.length).toBeGreaterThan(0);
+  });
+
+  it("limits projected conflicts to visible surface ambiguity", () => {
+    const sphere = createSwirlSphere({ x: 8, y: 8, z: 8 });
+    const panels = projectVolumeToSurfacePanels(sphere);
+    const result = reconstructProjectedHull(sphere.size, panels);
+
+    expect(result.volume.voxels.length).toBeGreaterThan(0);
+    expect(result.colorConflicts.length).toBe(64);
   });
 
   it("reconstructs a visual-hull candidate that matches source silhouettes", () => {
