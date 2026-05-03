@@ -68,6 +68,7 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
   await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
 
   const beforeDragEvents = Number((await canvas.getAttribute("data-orbit-events")) ?? "0");
+  const beforeDragPosition = await canvas.getAttribute("data-camera-position");
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
 
@@ -120,13 +121,14 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
   });
 
   await expect.poll(async () => Number((await canvas.getAttribute("data-orbit-events")) ?? "0")).toBeGreaterThan(beforeDragEvents);
+  await expect.poll(async () => canvas.getAttribute("data-camera-position")).not.toBe(beforeDragPosition);
   await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
 
   const beforeGizmoDrags = Number((await canvas.getAttribute("data-gizmo-drags")) ?? "0");
   await canvas.evaluate((element) => {
     const canvasElement = element as HTMLCanvasElement;
     const rect = canvasElement.getBoundingClientRect();
-    const start = { x: rect.right - 48, y: rect.top + 36 };
+    const start = { x: rect.right - 60, y: rect.top + 60 };
     const end = { x: start.x + 28, y: start.y + 12 };
 
     canvasElement.dispatchEvent(
@@ -194,7 +196,7 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
   await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
   await projectedButton.click();
   await expect(projectedButton).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("projected-conflict-status")).toContainText("ambiguous surface color conflicts");
+  await expect(page.getByTestId("projected-conflict-status")).toHaveCount(0);
   await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
   await outlineButton.click();
   await expect(outlineButton).toHaveAttribute("aria-pressed", "true");
@@ -234,6 +236,7 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
 
   await expect(page.getByTestId("voxel-surface-label")).toContainText("right");
   const beforePostGizmoOrbitEvents = Number((await canvas.getAttribute("data-orbit-events")) ?? "0");
+  const beforePostGizmoPosition = await canvas.getAttribute("data-camera-position");
   await canvas.evaluate((element) => {
     const canvasElement = element as HTMLCanvasElement;
     const rect = canvasElement.getBoundingClientRect();
@@ -280,6 +283,8 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
   await expect
     .poll(async () => Number((await canvas.getAttribute("data-orbit-events")) ?? "0"))
     .toBeGreaterThan(beforePostGizmoOrbitEvents);
+  await expect.poll(async () => canvas.getAttribute("data-controls-enabled")).toBe("true");
+  await expect.poll(async () => canvas.getAttribute("data-camera-position")).not.toBe(beforePostGizmoPosition);
   await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
   expect(consoleIssues).toEqual([]);
 });
