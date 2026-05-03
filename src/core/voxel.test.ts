@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import { createSwirlSphere, swirlPalette, swirlSphereColor } from "@/benchmarks/swirlSphere";
-import { getPanelPixel, type ViewPanel } from "@/core/panels";
+import { getPanelPixel, makeEmptyPanel, type ProjectionView, type ViewPanel } from "@/core/panels";
 import {
   axisViews,
   projectVolumeToAxisPanels,
   projectVolumeToSurfacePanels,
+  reconstructProjectedInspectionHull,
   reconstructProjectedHull,
   reconstructVisualHull,
   surfaceViews,
 } from "@/core/projection";
 import { isInsideSphere, type VoxelVolume } from "@/core/voxel";
-import { axisPlusDiagonalTemplate, gridTemplateSchema } from "@/schemas/template";
+import {
+  axisPlusDiagonalTemplate,
+  createSixSurfaceTemplate,
+  gridTemplateSchema,
+  sixSurfaceTemplatePresets,
+  sixSurfaceTemplatePresetSizes,
+} from "@/schemas/template";
 import { hasNoEnclosedVoids, validateVoxelCandidate } from "@/validation/voxelValidation";
 
 describe("isInsideSphere", () => {
@@ -82,6 +89,80 @@ describe("swirl sphere benchmark", () => {
     expect(result.colorConflicts).toEqual([]);
   });
 
+  it("creates visible-panel hollow shell voxels from currently enabled panels", () => {
+    const volume = createSolidCube(3);
+    const [front] = projectVolumeToSurfacePanels(volume);
+    const result = reconstructProjectedInspectionHull(volume.size, [front as ViewPanel], {
+      hollow: true,
+      hollowSource: "visible-panel-hollow",
+      visibleSurfaces: new Set(["front"]),
+    });
+
+    expect(result.volume.voxels).toHaveLength(9);
+    expect(result.volume.voxels.every((voxel) => voxel.y === 0)).toBe(true);
+    expect(result.ambiguityMarkers).toHaveLength(9);
+  });
+
+  it("filters the full projected hull to currently enabled hollow surfaces", () => {
+    const volume = createSolidCube(3);
+    const panels = projectVolumeToSurfacePanels(volume);
+    const result = reconstructProjectedInspectionHull(volume.size, panels, {
+      hollow: true,
+      hollowSource: "full-hull-surface-filter",
+      visibleSurfaces: new Set(["front"]),
+    });
+
+    expect(result.volume.voxels).toHaveLength(9);
+    expect(result.volume.voxels.every((voxel) => voxel.y === 0)).toBe(true);
+  });
+
+  it("shrinks visible-panel hollow shell when another projection constrains the footprint", () => {
+    const size = { x: 3, y: 3, z: 3 };
+    const front = occupiedPanel({ id: "front", axis: "y", surface: "front", direction: -1 }, 3, 3, [
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+    const top = occupiedPanel({ id: "top", axis: "z", surface: "top", direction: 1 }, 3, 3, [
+      [1, 0],
+      [1, 1],
+      [1, 2],
+    ]);
+    const frontOnly = reconstructProjectedInspectionHull(size, [front], {
+      hollow: true,
+      hollowSource: "visible-panel-hollow",
+      visibleSurfaces: new Set(["front"]),
+    });
+    const constrained = reconstructProjectedInspectionHull(size, [front, top], {
+      hollow: true,
+      hollowSource: "visible-panel-hollow",
+      visibleSurfaces: new Set(["front", "top"]),
+    });
+
+    expect(frontOnly.volume.voxels).toHaveLength(9);
+    expect(constrained.volume.voxels.length).toBeLessThan(frontOnly.volume.voxels.length);
+    expect(constrained.volume.voxels.every((voxel) => voxel.x === 1)).toBe(true);
+  });
+
+  it("keeps empty projected hollow hulls empty", () => {
+    const size = { x: 3, y: 3, z: 3 };
+    const front = makeEmptyPanel({ id: "front", axis: "y", surface: "front", direction: -1 }, 3, 3);
+    const result = reconstructProjectedInspectionHull(size, [front], {
+      hollow: true,
+      hollowSource: "visible-panel-hollow",
+      visibleSurfaces: new Set(["front"]),
+    });
+
+    expect(result.volume.voxels).toEqual([]);
+    expect(result.ambiguityMarkers).toEqual([]);
+  });
+
   it("reconstructs a visual-hull candidate that matches source silhouettes", () => {
     const sphere = createSwirlSphere({ x: 8, y: 8, z: 8 });
     const panels = projectVolumeToAxisPanels(sphere);
@@ -130,6 +211,58 @@ describe("swirl sphere benchmark", () => {
 });
 
 describe("grid template schema", () => {
+  it("defines schema-backed six-surface MVP presets for 16, 32, and 64 grids", () => {
+    expect(sixSurfaceTemplatePresetSizes).toEqual([16, 32, 64]);
+
+    for (const size of sixSurfaceTemplatePresetSizes) {
+      const template = gridTemplateSchema.parse(sixSurfaceTemplatePresets[size]);
+
+      expect(template.id).toBe(`six-surface-${size}-v1`);
+      expect(template.gridSize).toEqual({ x: size, y: size, z: size });
+      expect(template.panels.map((panel) => panel.id)).toEqual([
+        "front",
+        "back",
+        "left",
+        "right",
+        "top",
+        "bottom",
+      ]);
+      expect(template.validation.requiredViews).toEqual([
+        "front",
+        "back",
+        "left",
+        "right",
+        "top",
+        "bottom",
+      ]);
+      expect(template.panels.every((panel) => panel.panelRect.width === size && panel.panelRect.height === size)).toBe(
+        true,
+      );
+    }
+  });
+
+  it("keeps the six-surface template layout inside a 3-by-2 combined image grid", () => {
+    const size = 16;
+    const template = createSixSurfaceTemplate(size);
+    const expectedRects = [
+      ["front", { x: 0, y: 0, width: size, height: size }],
+      ["back", { x: size, y: 0, width: size, height: size }],
+      ["left", { x: size * 2, y: 0, width: size, height: size }],
+      ["right", { x: 0, y: size, width: size, height: size }],
+      ["top", { x: size, y: size, width: size, height: size }],
+      ["bottom", { x: size * 2, y: size, width: size, height: size }],
+    ];
+
+    expect(template.panels.map((panel) => [panel.id, panel.panelRect])).toEqual(expectedRects);
+    expect(
+      template.panels.every(
+        (panel) =>
+          panel.panelRect.x + panel.panelRect.width <= size * 3 &&
+          panel.panelRect.y + panel.panelRect.height <= size * 2,
+      ),
+    ).toBe(true);
+  });
+
   it("accepts the first axis-plus-diagonal contract", () => {
     expect(axisPlusDiagonalTemplate.panels.map((panel) => panel.id)).toEqual([
       "side-x",
@@ -193,4 +326,40 @@ function createHollowCube(): VoxelVolume {
   }
 
   return { size, voxels };
+}
+
+function createSolidCube(edge: number): VoxelVolume {
+  const size = { x: edge, y: edge, z: edge };
+  const voxels = [];
+
+  for (let z = 0; z < edge; z += 1) {
+    for (let y = 0; y < edge; y += 1) {
+      for (let x = 0; x < edge; x += 1) {
+        voxels.push({ x, y, z, color: "#ffffff" });
+      }
+    }
+  }
+
+  return { size, voxels };
+}
+
+function occupiedPanel(
+  view: ProjectionView,
+  width: number,
+  height: number,
+  occupiedCoordinates: readonly (readonly [number, number])[],
+): ViewPanel {
+  const occupied = new Set(occupiedCoordinates.map(([x, y]) => `${x},${y}`));
+
+  return {
+    ...view,
+    width,
+    height,
+    pixels: Array.from({ length: width * height }, (_, index) => {
+      const x = index % width;
+      const y = Math.floor(index / width);
+
+      return occupied.has(`${x},${y}`) ? { occupied: true, color: "#ffffff" } : { occupied: false, color: null };
+    }),
+  };
 }

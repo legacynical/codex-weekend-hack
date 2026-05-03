@@ -19,6 +19,23 @@ export const surfaceViews = [
 export type ProjectedHullResult = Readonly<{
   volume: VoxelVolume;
   colorConflicts: readonly string[];
+  conflictMarkers: readonly ProjectionMarker[];
+  ambiguityMarkers: readonly ProjectionMarker[];
+}>;
+
+export type ProjectionMarker = VoxelPoint &
+  Readonly<{
+    label: "x" | "?";
+    color: string;
+    surface?: ProjectionView["surface"];
+  }>;
+
+export type ProjectedInspectionSourceMode = "visible-panel-hollow" | "full-hull-surface-filter";
+
+export type ProjectedInspectionOptions = Readonly<{
+  hollow?: boolean;
+  hollowSource?: ProjectedInspectionSourceMode;
+  visibleSurfaces?: ReadonlySet<NonNullable<ProjectionView["surface"]>>;
 }>;
 
 export function projectPoint(point: VoxelPoint, axis: ProjectionView["axis"]): { x: number; y: number } {
@@ -87,7 +104,13 @@ export function reconstructVisualHull(size: GridSize, panels: readonly ViewPanel
 
 export function reconstructProjectedHull(size: GridSize, panels: readonly ViewPanel[]): ProjectedHullResult {
   const candidatePoints = [];
-  const colorConflicts = findDirectPanelColorConflicts(panels);
+  const colorConflictDetails = findDirectPanelColorConflictDetails(panels);
+  const colorConflicts = colorConflictDetails.map(
+    (conflict) => `${conflict.key}:${conflict.colors.join("|")}`,
+  );
+  const conflictMarkers = colorConflictDetails.map((conflict) =>
+    markerFromPanelPixel(size, conflict.panel, conflict.x, conflict.y, "x", "#ef4444"),
+  );
 
   for (let z = 0; z < size.z; z += 1) {
     for (let y = 0; y < size.y; y += 1) {
@@ -114,7 +137,44 @@ export function reconstructProjectedHull(size: GridSize, panels: readonly ViewPa
     return { ...point, color };
   });
 
-  return { volume: { size, voxels }, colorConflicts };
+  return { volume: { size, voxels }, colorConflicts, conflictMarkers, ambiguityMarkers: [] };
+}
+
+export function reconstructProjectedInspectionHull(
+  size: GridSize,
+  panels: readonly ViewPanel[],
+  options: ProjectedInspectionOptions = {},
+): ProjectedHullResult {
+  const visiblePanels = filterVisiblePanels(panels, options.visibleSurfaces);
+
+  if (!options.hollow) {
+    return reconstructProjectedHull(size, visiblePanels);
+  }
+
+  const sourcePanels = options.hollowSource === "full-hull-surface-filter" ? panels : visiblePanels;
+  const base = reconstructProjectedHull(size, sourcePanels);
+  const visiblePanelSet = visiblePanels.length > 0 ? visiblePanels : sourcePanels;
+  const occupied = new Set(base.volume.voxels.map((voxel) => pointKey(voxel)));
+  const shellVoxels = base.volume.voxels.filter((voxel) =>
+    visiblePanelSet.some((panel) => isVisibleFromPanel(voxel, panel, occupied, size)),
+  );
+  const ambiguityMarkers = shellVoxels
+    .filter((voxel) => {
+      const evidenceCount = visiblePanelSet.filter((panel) => isVisibleFromPanel(voxel, panel, occupied, size)).length;
+
+      return visiblePanelSet.length < 3 || evidenceCount < 2;
+    })
+    .map((voxel) => ({ ...voxel, label: "?" as const, color: "#facc15" }));
+
+  return {
+    colorConflicts: base.colorConflicts,
+    conflictMarkers: base.conflictMarkers,
+    ambiguityMarkers,
+    volume: {
+      size,
+      voxels: shellVoxels,
+    },
+  };
 }
 
 export function findSilhouetteMismatches(volume: VoxelVolume, panels: readonly ViewPanel[]): string[] {
@@ -218,8 +278,35 @@ function pointKey(point: VoxelPoint): string {
   return `${point.x},${point.y},${point.z}`;
 }
 
-function findDirectPanelColorConflicts(panels: readonly ViewPanel[]): string[] {
-  const colorsByRay = new Map<string, Set<string>>();
+function filterVisiblePanels(
+  panels: readonly ViewPanel[],
+  visibleSurfaces?: ReadonlySet<NonNullable<ProjectionView["surface"]>>,
+): ViewPanel[] {
+  if (!visibleSurfaces) {
+    return [...panels];
+  }
+
+  return panels.filter((panel) => !panel.surface || visibleSurfaces.has(panel.surface));
+}
+
+type DirectPanelColorConflict = Readonly<{
+  key: string;
+  colors: readonly string[];
+  panel: ViewPanel;
+  x: number;
+  y: number;
+}>;
+
+function findDirectPanelColorConflictDetails(panels: readonly ViewPanel[]): DirectPanelColorConflict[] {
+  const evidenceByRay = new Map<
+    string,
+    {
+      colors: Set<string>;
+      panel: ViewPanel;
+      x: number;
+      y: number;
+    }
+  >();
 
   for (const panel of panels) {
     const rayId = `${panel.surface ?? panel.id}:${panel.axis}:${panel.direction ?? 0}`;
@@ -232,13 +319,52 @@ function findDirectPanelColorConflicts(panels: readonly ViewPanel[]): string[] {
       const x = index % panel.width;
       const y = Math.floor(index / panel.width);
       const key = `${rayId}:${x},${y}`;
-      const colors = colorsByRay.get(key) ?? new Set<string>();
-      colors.add(pixel.color);
-      colorsByRay.set(key, colors);
+      const evidence = evidenceByRay.get(key) ?? { colors: new Set<string>(), panel, x, y };
+      evidence.colors.add(pixel.color);
+      evidenceByRay.set(key, evidence);
     });
   }
 
-  return [...colorsByRay.entries()]
-    .filter(([, colors]) => colors.size > 1)
-    .map(([key, colors]) => `${key}:${[...colors].join("|")}`);
+  return [...evidenceByRay.entries()]
+    .filter(([, evidence]) => evidence.colors.size > 1)
+    .map(([key, evidence]) => ({ key, colors: [...evidence.colors], panel: evidence.panel, x: evidence.x, y: evidence.y }));
+}
+
+function markerFromPanelPixel(
+  size: GridSize,
+  panel: ViewPanel,
+  x: number,
+  y: number,
+  label: ProjectionMarker["label"],
+  color: string,
+): ProjectionMarker {
+  switch (panel.axis) {
+    case "x":
+      return {
+        x: panel.direction && panel.direction < 0 ? 0 : size.x - 1,
+        y: x,
+        z: y,
+        label,
+        color,
+        surface: panel.surface,
+      };
+    case "y":
+      return {
+        x,
+        y: panel.direction && panel.direction < 0 ? 0 : size.y - 1,
+        z: y,
+        label,
+        color,
+        surface: panel.surface,
+      };
+    case "z":
+      return {
+        x,
+        y,
+        z: panel.direction && panel.direction < 0 ? 0 : size.z - 1,
+        label,
+        color,
+        surface: panel.surface,
+      };
+  }
 }
