@@ -1,5 +1,7 @@
 import { Box, CheckCircle2, Layers3, Palette, PanelTop, Upload } from "lucide-react";
 
+import { createSwirlSphere } from "@/benchmarks/swirlSphere";
+import { VoxelViewer } from "@/components/VoxelViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +13,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { projectVolumeToAxisPanels, reconstructVisualHull } from "@/core/projection";
+import { validateVoxelCandidate } from "@/validation/voxelValidation";
 
 const workflow = [
   { step: "01", label: "Parse uploaded grids", icon: PanelTop },
@@ -18,10 +22,24 @@ const workflow = [
   { step: "03", label: "Validate material coherence", icon: Palette },
 ] as const;
 
+const benchmarkVolume = createSwirlSphere({ x: 16, y: 16, z: 16 });
+const benchmarkPanels = projectVolumeToAxisPanels(benchmarkVolume);
+const benchmarkCandidate = reconstructVisualHull(benchmarkVolume.size, benchmarkPanels);
+const benchmarkReport = validateVoxelCandidate(benchmarkCandidate, benchmarkPanels);
+
 const lanes = [
-  "Silhouette consistency",
-  "Connected watertight volume",
-  "Surface color agreement",
+  {
+    label: "Silhouette consistency",
+    passed: benchmarkReport.geometry.silhouetteMismatches.length === 0,
+  },
+  {
+    label: "Connected watertight volume",
+    passed: benchmarkReport.geometry.connected && benchmarkReport.geometry.watertight,
+  },
+  {
+    label: "Surface color agreement",
+    passed: benchmarkReport.color.coherent,
+  },
 ] as const;
 
 function App() {
@@ -44,71 +62,51 @@ function App() {
           </Button>
         </header>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-          <section className="flex min-h-[520px] flex-col justify-between rounded-lg border bg-card p-5 shadow-sm sm:p-6">
-            <div className="max-w-3xl space-y-4">
-              <Badge variant="secondary" className="w-fit">
-                Multi-view voxel reconstruction
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+          <section className="grid gap-4">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="max-w-3xl space-y-3">
+                <Badge variant="secondary" className="w-fit">
+                  Multi-view voxel reconstruction
+                </Badge>
+                <h1 className="text-3xl font-semibold tracking-normal text-balance md:text-5xl">
+                  Inspect constrained voxel candidates in 3D.
+                </h1>
+                <p className="max-w-2xl text-base leading-7 text-muted-foreground">
+                  The first benchmark viewer renders the swirl sphere candidate with
+                  projected slice planes, orbit rotation, and front, side, and top snaps.
+                </p>
+              </div>
+              <Badge variant="outline" className="font-normal">
+                preset 16
               </Badge>
-              <h1 className="max-w-3xl text-4xl font-semibold tracking-normal text-balance md:text-6xl">
-                Inspect constrained image grids before they become voxel assets.
-              </h1>
-              <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-                A browser-first workbench for parsing orthographic, diagonal, and
-                cross-section panels into deterministic voxel candidates with
-                visible validation results.
-              </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              {workflow.map(({ step, label, icon: Icon }) => (
-                <div key={step} className="rounded-md border bg-background p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs font-semibold text-muted-foreground">{step}</div>
-                    <Icon className="size-4 text-primary" aria-hidden="true" />
-                  </div>
-                  <div className="mt-3 text-sm font-medium">{label}</div>
-                </div>
-              ))}
-            </div>
+            <VoxelViewer />
           </section>
 
           <aside className="grid gap-4">
             <Card>
               <CardHeader>
-                <CardTitle>Swirl sphere fixture</CardTitle>
-                <CardDescription>First analytic benchmark target</CardDescription>
+                <CardTitle>Benchmark pipeline</CardTitle>
+                <CardDescription>Deterministic fixture through reconstruction</CardDescription>
                 <CardAction>
                   <Badge variant="outline" className="font-normal">
-                  benchmark
+                    benchmark
                   </Badge>
                 </CardAction>
               </CardHeader>
-              <CardContent>
-                <div className="grid aspect-square grid-cols-8 gap-1 rounded-md border bg-muted p-3">
-                  {Array.from({ length: 64 }, (_, index) => {
-                    const row = Math.floor(index / 8);
-                    const col = index % 8;
-                    const distance = Math.hypot(row - 3.5, col - 3.5);
-                    const filled = distance < 3.7;
-                    const tone = (row + col) % 5;
-
-                    return (
-                      <div
-                        key={index}
-                        className={[
-                          "aspect-square rounded-[2px]",
-                          filled ? "shadow-sm" : "opacity-20",
-                          tone === 0 && filled ? "bg-[var(--chart-1)]" : "",
-                          tone === 1 && filled ? "bg-[var(--chart-2)]" : "",
-                          tone === 2 && filled ? "bg-[var(--chart-3)]" : "",
-                          tone === 3 && filled ? "bg-[var(--chart-4)]" : "",
-                          tone === 4 && filled ? "bg-[var(--chart-5)]" : "",
-                          !filled ? "bg-background" : "",
-                        ].join(" ")}
-                      />
-                    );
-                  })}
+              <CardContent className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                  {workflow.map(({ step, label, icon: Icon }) => (
+                    <div key={step} className="rounded-md border bg-background p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-semibold text-muted-foreground">{step}</div>
+                        <Icon className="size-4 text-primary" aria-hidden="true" />
+                      </div>
+                      <div className="mt-3 text-sm font-medium">{label}</div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -120,12 +118,12 @@ function App() {
               </CardHeader>
               <CardContent className="grid gap-3">
                 {lanes.map((item, index) => (
-                  <div key={item}>
+                  <div key={item.label}>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-sm">{item}</span>
+                      <span className="text-sm">{item.label}</span>
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                        pending
+                        {item.passed ? "pass" : "review"}
                       </span>
                     </div>
                     {index < lanes.length - 1 ? <Separator className="mt-3" /> : null}
