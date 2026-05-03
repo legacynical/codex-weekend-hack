@@ -1,6 +1,6 @@
 # Product requirements
 
-Last verified: 2026-05-02 11:55 PM PDT
+Last verified: 2026-05-03 08:31 AM PDT
 Source-of-truth for: product goals, scope, user-facing rules, and decision-rich intent for implementers
 
 > Purpose: capture settled product behavior and requirements. Do not treat guesswork as decisions; record uncertainty, conflicts, and owner decisions in Open questions (`oqN.` handles). Audience: project owner, future humans, and agent implementers.
@@ -59,6 +59,13 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Include a small benchmark set that distinguishes valid generations, invalid generations, and ambiguous generations.
 - Include a voxel sphere with a complex, colorful swirl pattern as an early benchmark.
 - Make failure reasons actionable enough to guide the next prompt, template, or solver change.
+
+### MVP build sequence
+
+1. Ship pregenerated downloadable grid template images for the `16`, `32`, and `64` presets, backed by the existing template schema rather than hand-made static assets.
+2. Add upload slots that map user-provided pixel-grid images to explicit template panels or signed surfaces, then validate dimensions, required slots, and panel metadata before reconstruction.
+3. Wire uploaded slot data into the existing visual-hull reconstruction path so the user can construct a first voxel model from real template images, even if the first object class is simple geometry or the swirl sphere benchmark.
+4. Keep further 3D inspection polish scoped to what the upload-to-voxel path needs: panel visibility, projected mode, conflict reporting, and enough camera/gizmo behavior to inspect whether construction worked.
 
 ### Deferred decisions
 
@@ -154,7 +161,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - The active surface text label should appear below the gizmo after a ball-joint selection so users know which orthogonal face is in view.
 - Free camera rotation should remain available like Blender after any orthogonal surface transition, projected-mode toggle, panel-visibility change, or gizmo interaction; the perspective viewer must never remain in a locked, pan-only, or disabled-control state after a completed interaction.
 - Dedicated orthogonal-view toggle and arrow controls are deprecated and should be removed cleanly once ball-joint navigation is available.
-- The 3D voxel scene should include an always-visible Blender-style navigation/orientation gizmo in the top-right of the voxel canvas. It should prioritize camera navigation behavior over object-transform behavior: drag the center/orbit ball to orbit in perspective view, click a signed axis target to align to that surface, and keep the main canvas orbitable afterward.
+- The 3D voxel scene should include an always-visible Blender-style navigation/orientation gizmo in the top-right of the voxel canvas. It should prioritize camera navigation behavior over object-transform behavior: drag the center/orbit ball to orbit in perspective view, click the center/orbit ball to transition into the closest signed orthographic surface view, click a signed axis target to align to that surface, and keep the main canvas orbitable afterward.
 - Dragging the middle/center of the orientation gizmo must behave as free perspective orbit/tumble, not as a constrained single-axis ring rotation. The camera should continue accepting horizontal and vertical orbit deltas across repeated drags without hitting a permanent polar lock, disabled-control state, or pan-only state.
 - The gizmo should use Blender-like polish as a reference point: `X` red, `Y` green, and `Z` blue; large clickable ball targets instead of arrowheads; labels rendered on the positive-axis balls themselves; a center orbit ball that can be grabbed/click-dragged for free perspective rotation; dimmer/opposing signed targets for the negative sides; clean hover/pressed states; and no oversized frame that competes with the voxel scene.
 - Perspective free-rotate regressions require root-cause investigation before being closed. Known risk: forcing a camera up vector that is parallel to the active view direction can produce a degenerate camera basis and make orbit controls appear stuck, especially after front/back orthogonal transitions.
@@ -163,6 +170,14 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Voxel rendering should default to compact packed cubes with no visual gaps between adjacent voxels.
 - The viewer should provide a display-mode toggle for showing individual cube outlines versus rendering same-color adjacent voxels as visually continuous blocks; this is a rendering preference only and must not change voxel occupancy or validation data.
 - The viewer should provide a `Projected` display toggle that shows only the voxels implied or shaped by the currently visible projected panels. This mode should attempt to assign voxel colors from surface-visible panel pixels, flag color conflicts only when visible panel evidence constrains the same projected surface voxel to incompatible colors, and remain an inspection aid that does not overwrite the canonical voxel candidate or validation result.
+- The viewer should provide `Hollow` as a first-class object display toggle, not a hidden sub-option. Hollow mode controls whether the current voxel preview shows only shell/surface voxels or includes filled interior voxels.
+- Hollow projected inspection should support two source modes:
+  - **Visible-panel hollow:** show the visible surface voxels directly evidenced by the currently enabled panels.
+  - **Full-hull surface filter:** calculate from the full reconstructed hull, but show only the hull voxels associated with the currently enabled panels.
+- Hollow behavior should work whether the underlying hull is empty or filled. The toggle changes which voxels are displayed for inspection; it must not rewrite canonical occupancy, panel data, or validation results.
+- Hollow projected mode should keep the object footprint contained to the exterior layer visible from the active panels, then shrink inward when another visible projection constrains that footprint to a smaller silhouette or depth range. The intent is a hollow/surface preview that can show both the partial panel-calculated hull and the enabled-panel portion of the full calculated hull.
+- Hollow mode should remain inspectable: if multiple visible panels imply incompatible shell placement, depth, or color assignments, the UI should flag the ambiguity rather than silently filling or deleting interior voxels.
+- Conflict and ambiguity overlays should be independently toggleable. Conflict voxels may be marked with `x` on relevant faces, and ambiguous candidate shell voxels may be marked with `?` on relevant faces, so users can diagnose each failure class without losing the underlying hull preview.
 - A projected hull reconstructed from the benchmark's own six signed surface panels should not report thousands of color conflicts by default. If the swirl sphere's own canonical panels still produce projected conflicts, the UI should treat that as a reconstruction/color-assignment bug or an under-specified-projection limitation to resolve before adding new workflows.
 - Pixel-level conflict resolution through a pixel editor is a planned feature after projected-mode inspection can reliably identify conflicts; direct pixel editing is not required in the current inspection slice.
 
@@ -171,6 +186,9 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - The system converts generated views into a candidate voxel volume.
 - For the earliest prototype, reconstruction may favor conservative occupancy rules over artistic completeness.
 - Ambiguous cells should be tracked rather than silently guessed when possible.
+- Projected hollow reconstruction should be modeled as a preview constraint over visible panels: either retain the surface voxels directly evidenced by the enabled panels, or compute from the full reconstructed hull and filter the visible surface voxels by enabled panel membership.
+- Hollow preview should shrink the displayed shell when additional panel constraints rule out part of the footprint, while preserving enough ambiguity metadata to show candidate shell voxels when strict resolution is not possible.
+- Hollow preview must preserve enough evidence to explain why a voxel is kept, removed, or marked ambiguous, including which panel projection constrained it.
 
 ### Validation and review
 
@@ -180,6 +198,8 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Validation review should explain color/material conflicts in plain terms, especially when axis-only visual-hull reconstruction matches silhouettes but cannot infer hidden or conflicting surface colors.
 - Projected-mode review should separately flag color conflicts introduced by the currently visible panel set so users can tell the difference between canonical candidate validation failures and active-panel projection conflicts.
 - Projected-mode conflict counts must be explainable and benchmark-calibrated. The canonical swirl sphere panels should produce either zero conflicts or a small, documented ambiguity class with examples; an unexplained high count such as `1548` should fail stability review.
+- Hollow projected-mode review should report shell-specific ambiguity separately from color conflict: a voxel may be geometrically ambiguous because panel evidence does not determine whether it belongs to the hollow shell, even when its color evidence is consistent.
+- Conflict and ambiguity markers should be rendered as inspection overlays, not as voxel colors. Users must be able to independently hide conflict `x` markers and ambiguity `?` markers while keeping the hollow or filled voxel preview visible.
 
 ### First benchmark: swirl voxel sphere
 
@@ -214,6 +234,8 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Validate the core pipeline with deterministic unit tests before relying on browser smoke tests or visual inspection.
 - Use browser-level checks for upload flow, layout, nonblank voxel rendering, rotatable slice-grid rendering, gizmo-driven orthogonal surface selection, saved template round trips, and mismatch overlays once the UI exists.
 - Browser-level 3D inspection checks should cover actual camera position changes from free orbit before and after gizmo ball-joint orthogonal transitions, projected-mode toggles, panel visibility toggles, and repeated drag interactions; center-gizmo drag behavior; animated surface transitions from gizmo ball joints; visibility of the top-right orientation gizmo; reachability of scene controls without scrolling away from the voxel canvas; compact/no-gap voxel rendering; the cube-outline display toggle; six signed panel visibility toggles; the `Projected` display toggle; projected color assignment from surface-visible panel pixels; projected color-conflict reporting; and surface-label updates when gizmo ball joints are used.
+- Hollow-mode tests should verify both visible-panel hollow and full-hull surface-filter modes. Coverage should include empty and filled hull fixtures, interior voxel removal, outer-shell preservation, footprint shrinkage when another visible projection constrains the result, and separate reporting/toggling for conflict `x` markers and ambiguity `?` markers.
+- Add example pixel-panel fixture sets for the projected hollow path: a single-panel visible-surface case, a multi-panel strict-intersection shrink case, a full-hull surface-filter case, a conflicting-color case, an ambiguous-shell case, and an empty-hull/no-evidence case.
 - Perspective free-rotate regression coverage should include repeated drags in varied directions and assert that the camera keeps changing while controls remain enabled, so failures where rotation eventually becomes restricted are caught before release.
 - Browser-level 3D inspection checks should also cover signed panel alignment from representative front/back/left/right/top/bottom camera views, the interactive rotation-arc behavior of the top-right gizmo, and control overlay footprint so the toolbar does not dominate or obscure the primary voxel scene.
 - Maintain benchmark tiers:
@@ -247,23 +269,19 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 
 ## Task triage
 
-tt1. [iterate] Prototype and evaluate the swirl voxel sphere benchmark with occupancy, watertight/connectivity, and color coherence checks.
-tt2. [action] Define the first configurable multi-view grid template and JSON/Zod contract supporting grid sizes, saved templates, `x`, `y`, `z`, and 45-degree diagonal or cross-section panels.
-tt3. [iterate] Test whether axis-only, axis-plus-diagonal, or axis-plus-cross-section grid inputs produce the best validity rate for simple geometry.
-tt4. [risk] Animal generation may require richer constraints than side views can provide, causing attractive but structurally invalid voxel outputs.
-tt5. [deferred] Add external image generation API support after saved/uploaded image workflows and template prompts are useful.
-tt6. [action] Refactor the rotatable slice workspace and reconstructed voxel model viewer so panel visibility controls and camera orientation controls are separate UI concepts.
-tt7. [action] Stabilize voxel scene inspection UX with a top-right `x/y/z` orientation gizmo, canvas-local controls, compact no-gap voxel rendering, and cube-outline display mode.
-tt8. [action] Add six signed projected panels, per-surface visibility state, and gizmo-driven signed orthogonal surface transitions with current-surface labeling.
-tt9. [action] Add a `Projected` display mode that previews the voxel hull implied by the currently visible projected panels, assigns colors from visible panel pixels, and reports color conflicts without mutating the canonical voxel candidate.
-tt10. [deferred] Add a pixel editor for resolving projected-panel color conflicts after projected-mode conflict detection is reliable.
-tt11. [action] Correct signed panel placement and orientation so all six projected panels line up with their corresponding voxel-volume sides.
-tt12. [iterate] Replace the oversized canvas control block with a compact modern control surface that keeps the voxel scene visually primary.
-tt13. [iterate] Upgrade the top-right orientation gizmo into a Blender-style combination gizmo with colored axes, draggable rotation arcs, and clickable ball joints for signed orthogonal surface views.
-tt14. [action] Fix the perspective free-rotate regression so viewport drag and center-gizmo drag never get stuck, constrained to ring-only rotation, or disabled after repeated drags, gizmo, projected-mode, panel, or surface-selection interactions.
-tt15. [action] Investigate and reduce the `1548` projected color conflicts from canonical swirl sphere panels; document any remaining expected ambiguity with example voxels and panel evidence.
-tt16. [iterate] Redesign the gizmo visual model around larger ball targets that replace arrowheads, labels above positive-axis balls, hover/pressed states, and Blender-like navigation behavior.
-tt17. [action] Add instrumentation and regression coverage that proves perspective drags change camera position after front/back/top/bottom/right/left gizmo transitions, not only that OrbitControls emits events.
+tt2. [action] Generate downloadable PNG template images from the template preset, including visible cell boundaries, panel labels, transparent or reserved blank cells, and image dimensions that exactly match the parser contract.
+tt3. [action] Add a template download panel in the app that lets users choose `16`, `32`, or `64`, preview the template, and download the PNG for use in an external image model.
+tt4. [action] Add upload slots for the six signed surface panels, with one file input per slot plus a combined-template upload path if the image contains all panels in one grid.
+tt5. [action] Implement browser image parsing that converts uploaded PNG/WebP/JPEG pixels into `ViewPanel` data through Canvas/ImageData, preserving occupied pixels and source colors.
+tt6. [action] Validate uploaded images before reconstruction: required slots present, dimensions match the selected preset, panel rectangles are in bounds, transparency/background maps to empty cells, and non-empty pixels map to valid occupied voxels.
+tt7. [action] Connect parsed uploaded panels to `reconstructProjectedHull` and `validateVoxelCandidate`, replacing the built-in benchmark as the active candidate when uploads are valid.
+tt8. [action] Update the viewer state so uploaded panels, reconstructed voxels, projected mode, conflict markers, and validation lanes all refresh from the same run record.
+tt9. [iterate] Create one known-good uploaded fixture set from the swirl sphere panels and one simple geometric object so upload parsing can be tested without relying on image-model variability.
+tt10. [iterate] Add prompt copy next to each downloadable template that tells an external image model to keep panel layout, grid boundaries, transparency/background, and pixel scale intact.
+tt11. [action] Add local JSON export/import for the first run record: template id, preset size, uploaded source names, parsed panels, reconstructed voxel candidate, and validation result.
+tt12. [risk] Image models may distort grid boundaries, labels, or panel dimensions; mitigate by using high-contrast template guides, strict parser validation, and clear failure messages before reconstruction.
+tt13. [deferred] Add external image generation API support after template download, upload parsing, reconstruction, validation, and local replay are reliable.
+tt14. [deferred] Add direct pixel editing and advanced hollow/ambiguity workflows after the uploaded-image-to-voxel loop works end to end.
 
 ---
 
@@ -293,3 +311,7 @@ d17. The Blender navigation gizmo, not the object transform gizmo, is the closer
 d18. The current `1548` projected color conflicts in the canonical swirl sphere are not accepted as expected behavior without deeper proof; the next implementation pass should treat them as a bug or unresolved projection-model limitation.
 d19. A likely root cause of the repeated perspective-rotate lock is camera-up handling: resetting `camera.up` to world Y while the camera is looking along the Y axis can make the up vector parallel to the view direction and destabilize OrbitControls.
 d20. Gizmo labels should be rendered on the positive-axis balls themselves, and the center ball should be an active orbit affordance rather than decorative geometry.
+d21. Hollow mode is a first-class display toggle. For projected inspection, it should support visible-panel hollow and full-hull surface-filter source modes, work for empty or filled hulls, shrink under additional projection constraints, and avoid rewriting the canonical voxel candidate until editing/reconstruction workflows mature.
+d22. Conflict voxels and ambiguous shell candidates should be visible as independently toggleable face overlays: `x` markers for conflicts and `?` markers for ambiguous candidate shell voxels.
+d23. The next MVP slice prioritizes downloadable template images, upload slots, and uploaded-image voxel construction before broadening object classes or adding external image-generation APIs.
+d24. The schema-backed `six-surface` MVP template preset exists for `16`, `32`, and `64` grids. Its combined image layout is a 3-by-2 grid ordered `front`, `back`, `left`, `right`, `top`, `bottom`, with each panel occupying a square `size` by `size` rectangle.
