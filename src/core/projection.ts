@@ -87,7 +87,7 @@ export function reconstructVisualHull(size: GridSize, panels: readonly ViewPanel
 
 export function reconstructProjectedHull(size: GridSize, panels: readonly ViewPanel[]): ProjectedHullResult {
   const candidatePoints = [];
-  const colorConflicts: string[] = [];
+  const colorConflicts = findDirectPanelColorConflicts(panels);
 
   for (let z = 0; z < size.z; z += 1) {
     for (let y = 0; y < size.y; y += 1) {
@@ -110,10 +110,6 @@ export function reconstructProjectedHull(size: GridSize, panels: readonly ViewPa
     const colorEvidence = visiblePixels.length > 0 ? visiblePixels : panels.map((panel) => getProjectedPixel(panel, point));
     const colors = [...new Set(colorEvidence.map((pixel) => pixel.color).filter((color): color is string => color !== null))];
     const color = colors[0] ?? "#ffffff";
-
-    if (colors.length > 1) {
-      colorConflicts.push(`${point.x},${point.y},${point.z}:${colors.join("|")}`);
-    }
 
     return { ...point, color };
   });
@@ -220,4 +216,29 @@ function isVisibleFromPanel(
 
 function pointKey(point: VoxelPoint): string {
   return `${point.x},${point.y},${point.z}`;
+}
+
+function findDirectPanelColorConflicts(panels: readonly ViewPanel[]): string[] {
+  const colorsByRay = new Map<string, Set<string>>();
+
+  for (const panel of panels) {
+    const rayId = `${panel.surface ?? panel.id}:${panel.axis}:${panel.direction ?? 0}`;
+
+    panel.pixels.forEach((pixel, index) => {
+      if (!pixel.occupied || !pixel.color) {
+        return;
+      }
+
+      const x = index % panel.width;
+      const y = Math.floor(index / panel.width);
+      const key = `${rayId}:${x},${y}`;
+      const colors = colorsByRay.get(key) ?? new Set<string>();
+      colors.add(pixel.color);
+      colorsByRay.set(key, colors);
+    });
+  }
+
+  return [...colorsByRay.entries()]
+    .filter(([, colors]) => colors.size > 1)
+    .map(([key, colors]) => `${key}:${[...colors].join("|")}`);
 }

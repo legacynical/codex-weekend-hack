@@ -73,13 +73,13 @@ describe("swirl sphere benchmark", () => {
     expect(result.colorConflicts.length).toBeGreaterThan(0);
   });
 
-  it("limits projected conflicts to visible surface ambiguity", () => {
+  it("does not treat cross-surface color differences as projected conflicts", () => {
     const sphere = createSwirlSphere({ x: 8, y: 8, z: 8 });
     const panels = projectVolumeToSurfacePanels(sphere);
     const result = reconstructProjectedHull(sphere.size, panels);
 
     expect(result.volume.voxels.length).toBeGreaterThan(0);
-    expect(result.colorConflicts.length).toBe(64);
+    expect(result.colorConflicts).toEqual([]);
   });
 
   it("reconstructs a visual-hull candidate that matches source silhouettes", () => {
