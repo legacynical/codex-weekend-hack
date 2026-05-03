@@ -1,6 +1,6 @@
 # Product requirements
 
-Last verified: 2026-05-02 07:08 PM
+Last verified: 2026-05-02 08:43 PM PDT
 Source-of-truth for: product goals, scope, user-facing rules, and decision-rich intent for implementers
 
 > Purpose: capture settled product behavior and requirements. Do not treat guesswork as decisions; record uncertainty, conflicts, and owner decisions in Open questions (`oqN.` handles). Audience: project owner, future humans, and agent implementers.
@@ -149,6 +149,10 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Camera controls should include snap-to orthogonal views, with front, side, and top required first.
 - Back, bottom, diagonal, and target-slice snap views are planned after the base camera path works.
 - Snap views must not replace free rotation; users need both fixed profile checks and arbitrary-angle inspection.
+- The 3D voxel scene should include an always-visible orientation gizmo with colored `x`, `y`, and `z` arrows so users can understand the current camera orientation while freely rotating.
+- Frequently used 3D inspection controls, including object visibility, projected-panel visibility, voxel outline mode, and camera snaps, should remain reachable from the voxel scene itself without requiring the user to scroll away from the canvas.
+- Voxel rendering should default to compact packed cubes with no visual gaps between adjacent voxels.
+- The viewer should provide a display-mode toggle for showing individual cube outlines versus rendering same-color adjacent voxels as visually continuous blocks; this is a rendering preference only and must not change voxel occupancy or validation data.
 
 ### Reconstruction
 
@@ -161,6 +165,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - The system reports whether the candidate is valid, invalid, or ambiguous.
 - Validation should include geometry and appearance rules appropriate to the current object class, such as recognizability, connectivity, watertightness, silhouette consistency, coherent colors/materials, unsupported floating voxels, volume bounds, and simple symmetry constraints.
 - Human review should include the source views, rotatable slice workspace, rendered voxel preview, snap-to orthogonal views, and validation report.
+- Validation review should explain color/material conflicts in plain terms, especially when axis-only visual-hull reconstruction matches silhouettes but cannot infer hidden or conflicting surface colors.
 
 ### First benchmark: swirl voxel sphere
 
@@ -194,6 +199,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Include the swirl voxel sphere as an early fixture and uploaded-grid benchmark.
 - Validate the core pipeline with deterministic unit tests before relying on browser smoke tests or visual inspection.
 - Use browser-level checks for upload flow, layout, nonblank voxel rendering, rotatable slice-grid rendering, snap-to camera views, saved template round trips, and mismatch overlays once the UI exists.
+- Browser-level 3D inspection checks should cover free orbit after snap views, visibility of the orientation gizmo, reachability of scene controls without scrolling away from the voxel canvas, compact/no-gap voxel rendering, and the cube-outline display toggle.
 - Maintain benchmark tiers:
   - Tier 1: simple geometric solids and combinations, including the swirl voxel sphere.
   - Tier 2: voxelized icons and simple props.
@@ -230,6 +236,7 @@ tt3. [iterate] Test whether axis-only, axis-plus-diagonal, or axis-plus-cross-se
 tt4. [risk] Animal generation may require richer constraints than side views can provide, causing attractive but structurally invalid voxel outputs.
 tt5. [deferred] Add external image generation API support after saved/uploaded image workflows and template prompts are useful.
 tt6. [action] Prototype the rotatable slice workspace and reconstructed voxel model viewer with snap-to orthogonal camera controls.
+tt7. [action] Stabilize voxel scene inspection UX with an `x/y/z` orientation gizmo, canvas-local controls, compact no-gap voxel rendering, and cube-outline display mode.
 
 ---
 
@@ -243,3 +250,5 @@ d1. The free-rotate workspace remains upload/inspect/template-only for v0; direc
 d2. The grid view should support various slice selections, including non-center slices, not only orthogonal view slices or 45-degree slices through center mass.
 d3. First-class saved-template grid size presets are `16`, `32`, and `64`; arbitrary dimensions are planned later.
 d4. Initial snap views are front, side, and top; back, bottom, diagonal, and target-slice snap views are planned after the base camera path works.
+d5. Voxel scene controls should be available near or over the canvas instead of only below later page content, because scroll-dependent controls make inspection workflows harder to use.
+d6. Compact packed voxel rendering with no gaps is the preferred default; cube outlines are an optional display mode for reading individual voxel boundaries.
