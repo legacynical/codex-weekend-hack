@@ -1,6 +1,6 @@
 # Product requirements
 
-Last verified: 2026-05-02 11:47 PM PDT
+Last verified: 2026-05-02 11:55 PM PDT
 Source-of-truth for: product goals, scope, user-facing rules, and decision-rich intent for implementers
 
 > Purpose: capture settled product behavior and requirements. Do not treat guesswork as decisions; record uncertainty, conflicts, and owner decisions in Open questions (`oqN.` handles). Audience: project owner, future humans, and agent implementers.
@@ -155,6 +155,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Free camera rotation should remain available like Blender after any orthogonal surface transition, projected-mode toggle, panel-visibility change, or gizmo interaction; the perspective viewer must never remain in a locked, pan-only, or disabled-control state after a completed interaction.
 - Dedicated orthogonal-view toggle and arrow controls are deprecated and should be removed cleanly once ball-joint navigation is available.
 - The 3D voxel scene should include an always-visible Blender-style navigation/orientation gizmo in the top-right of the voxel canvas. It should prioritize camera navigation behavior over object-transform behavior: drag the center/orbit ball to orbit in perspective view, click a signed axis target to align to that surface, and keep the main canvas orbitable afterward.
+- Dragging the middle/center of the orientation gizmo must behave as free perspective orbit/tumble, not as a constrained single-axis ring rotation. The camera should continue accepting horizontal and vertical orbit deltas across repeated drags without hitting a permanent polar lock, disabled-control state, or pan-only state.
 - The gizmo should use Blender-like polish as a reference point: `X` red, `Y` green, and `Z` blue; large clickable ball targets instead of arrowheads; labels rendered on the positive-axis balls themselves; a center orbit ball that can be grabbed/click-dragged for free perspective rotation; dimmer/opposing signed targets for the negative sides; clean hover/pressed states; and no oversized frame that competes with the voxel scene.
 - Perspective free-rotate regressions require root-cause investigation before being closed. Known risk: forcing a camera up vector that is parallel to the active view direction can produce a degenerate camera basis and make orbit controls appear stuck, especially after front/back orthogonal transitions.
 - Frequently used 3D inspection controls, including object visibility, projected-panel visibility, voxel outline mode, projected mode, and gizmo surface navigation, should remain reachable from the voxel scene itself without requiring the user to scroll away from the canvas.
@@ -213,6 +214,7 @@ Source-of-truth for: product goals, scope, user-facing rules, and decision-rich 
 - Validate the core pipeline with deterministic unit tests before relying on browser smoke tests or visual inspection.
 - Use browser-level checks for upload flow, layout, nonblank voxel rendering, rotatable slice-grid rendering, gizmo-driven orthogonal surface selection, saved template round trips, and mismatch overlays once the UI exists.
 - Browser-level 3D inspection checks should cover actual camera position changes from free orbit before and after gizmo ball-joint orthogonal transitions, projected-mode toggles, panel visibility toggles, and repeated drag interactions; center-gizmo drag behavior; animated surface transitions from gizmo ball joints; visibility of the top-right orientation gizmo; reachability of scene controls without scrolling away from the voxel canvas; compact/no-gap voxel rendering; the cube-outline display toggle; six signed panel visibility toggles; the `Projected` display toggle; projected color assignment from surface-visible panel pixels; projected color-conflict reporting; and surface-label updates when gizmo ball joints are used.
+- Perspective free-rotate regression coverage should include repeated drags in varied directions and assert that the camera keeps changing while controls remain enabled, so failures where rotation eventually becomes restricted are caught before release.
 - Browser-level 3D inspection checks should also cover signed panel alignment from representative front/back/left/right/top/bottom camera views, the interactive rotation-arc behavior of the top-right gizmo, and control overlay footprint so the toolbar does not dominate or obscure the primary voxel scene.
 - Maintain benchmark tiers:
   - Tier 1: simple geometric solids and combinations, including the swirl voxel sphere.
@@ -258,7 +260,7 @@ tt10. [deferred] Add a pixel editor for resolving projected-panel color conflict
 tt11. [action] Correct signed panel placement and orientation so all six projected panels line up with their corresponding voxel-volume sides.
 tt12. [iterate] Replace the oversized canvas control block with a compact modern control surface that keeps the voxel scene visually primary.
 tt13. [iterate] Upgrade the top-right orientation gizmo into a Blender-style combination gizmo with colored axes, draggable rotation arcs, and clickable ball joints for signed orthogonal surface views.
-tt14. [action] Fix the perspective free-rotate regression so viewport drag never gets stuck after gizmo, projected-mode, panel, or surface-selection interactions.
+tt14. [action] Fix the perspective free-rotate regression so viewport drag and center-gizmo drag never get stuck, constrained to ring-only rotation, or disabled after repeated drags, gizmo, projected-mode, panel, or surface-selection interactions.
 tt15. [action] Investigate and reduce the `1548` projected color conflicts from canonical swirl sphere panels; document any remaining expected ambiguity with example voxels and panel evidence.
 tt16. [iterate] Redesign the gizmo visual model around larger ball targets that replace arrowheads, labels above positive-axis balls, hover/pressed states, and Blender-like navigation behavior.
 tt17. [action] Add instrumentation and regression coverage that proves perspective drags change camera position after front/back/top/bottom/right/left gizmo transitions, not only that OrbitControls emits events.
