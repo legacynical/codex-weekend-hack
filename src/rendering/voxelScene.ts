@@ -70,7 +70,13 @@ export class VoxelScene {
   private sceneSize: GridSize;
   private activeGizmoDrag:
     | {
-        axis: Vector3;
+        pointerId: number;
+        previousX: number;
+        previousY: number;
+      }
+    | null = null;
+  private activeSceneDrag:
+    | {
         pointerId: number;
         previousX: number;
         previousY: number;
@@ -105,11 +111,17 @@ export class VoxelScene {
     this.renderer.domElement.style.width = "100%";
     this.renderer.domElement.style.height = "100%";
     this.renderer.domElement.addEventListener("pointerdown", this.handleGizmoPointerDown, true);
+    this.renderer.domElement.addEventListener("pointerdown", this.handleScenePointerDown, true);
     this.renderer.domElement.addEventListener("pointermove", this.handleGizmoPointerMove, true);
+    this.renderer.domElement.addEventListener("pointermove", this.handleScenePointerMove, true);
     this.renderer.domElement.addEventListener("pointerup", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.addEventListener("pointerup", this.handleScenePointerUp, true);
     this.renderer.domElement.addEventListener("pointercancel", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.addEventListener("pointercancel", this.handleScenePointerUp, true);
     this.renderer.domElement.addEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.addEventListener("lostpointercapture", this.handleScenePointerUp, true);
     window.addEventListener("pointerup", this.handleGizmoPointerUp, true);
+    window.addEventListener("pointerup", this.handleScenePointerUp, true);
     this.host.append(this.renderer.domElement);
 
     this.camera = new PerspectiveCamera(45, 1, 0.1, 1000);
@@ -241,11 +253,17 @@ export class VoxelScene {
     this.clearGroup(this.panelRoot);
     this.clearGroup(this.gizmoRoot);
     this.renderer.domElement.removeEventListener("pointerdown", this.handleGizmoPointerDown, true);
+    this.renderer.domElement.removeEventListener("pointerdown", this.handleScenePointerDown, true);
     this.renderer.domElement.removeEventListener("pointermove", this.handleGizmoPointerMove, true);
+    this.renderer.domElement.removeEventListener("pointermove", this.handleScenePointerMove, true);
     this.renderer.domElement.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.removeEventListener("pointerup", this.handleScenePointerUp, true);
     this.renderer.domElement.removeEventListener("pointercancel", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.removeEventListener("pointercancel", this.handleScenePointerUp, true);
     this.renderer.domElement.removeEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.removeEventListener("lostpointercapture", this.handleScenePointerUp, true);
     window.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
+    window.removeEventListener("pointerup", this.handleScenePointerUp, true);
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -343,7 +361,6 @@ export class VoxelScene {
 
     this.controls.enabled = false;
     this.activeGizmoDrag = {
-      axis: gizmoAxisFromPointer(event, this.renderer.domElement),
       pointerId: event.pointerId,
       previousX: event.clientX,
       previousY: event.clientY,
@@ -359,10 +376,11 @@ export class VoxelScene {
     event.preventDefault();
     event.stopPropagation();
 
-    const delta = event.clientX - this.activeGizmoDrag.previousX + event.clientY - this.activeGizmoDrag.previousY;
+    const deltaX = event.clientX - this.activeGizmoDrag.previousX;
+    const deltaY = event.clientY - this.activeGizmoDrag.previousY;
     this.activeGizmoDrag.previousX = event.clientX;
     this.activeGizmoDrag.previousY = event.clientY;
-    this.rotateCameraAround(this.activeGizmoDrag.axis, delta * 0.012);
+    this.orbitCameraFromDrag(deltaX, deltaY);
     const currentCount = Number(this.renderer.domElement.dataset.gizmoDrags ?? "0");
     this.renderer.domElement.dataset.gizmoDrags = String(currentCount + 1);
   };
@@ -386,11 +404,73 @@ export class VoxelScene {
     this.controls.enabled = true;
   }
 
-  private rotateCameraAround(axis: Vector3, angle: number): void {
+  private handleScenePointerDown = (event: PointerEvent): void => {
+    if (this.isInGizmoViewport(event) || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.animation = null;
+    this.controls.enabled = false;
+    this.activeSceneDrag = {
+      pointerId: event.pointerId,
+      previousX: event.clientX,
+      previousY: event.clientY,
+    };
+    this.renderer.domElement.setPointerCapture(event.pointerId);
+  };
+
+  private handleScenePointerMove = (event: PointerEvent): void => {
+    if (!this.activeSceneDrag || event.pointerId !== this.activeSceneDrag.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const deltaX = event.clientX - this.activeSceneDrag.previousX;
+    const deltaY = event.clientY - this.activeSceneDrag.previousY;
+    this.activeSceneDrag.previousX = event.clientX;
+    this.activeSceneDrag.previousY = event.clientY;
+    this.orbitCameraFromDrag(deltaX, deltaY);
+    const currentCount = Number(this.renderer.domElement.dataset.orbitEvents ?? "0");
+    this.renderer.domElement.dataset.orbitEvents = String(currentCount + 1);
+  };
+
+  private handleScenePointerUp = (event: PointerEvent): void => {
+    if (!this.activeSceneDrag || event.pointerId !== this.activeSceneDrag.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.finishSceneDrag(event.pointerId);
+  };
+
+  private finishSceneDrag(pointerId?: number): void {
+    if (pointerId !== undefined && this.renderer.domElement.hasPointerCapture(pointerId)) {
+      this.renderer.domElement.releasePointerCapture(pointerId);
+    }
+
+    this.activeSceneDrag = null;
+    this.controls.enabled = true;
+  }
+
+  private orbitCameraFromDrag(deltaX: number, deltaY: number): void {
     const target = this.controls.target;
-    const offset = this.camera.position.clone().sub(target).applyAxisAngle(axis, angle);
+    const offset = this.camera.position.clone().sub(target);
+    const viewDirection = target.clone().sub(this.camera.position).normalize();
+    const yawAxis = this.camera.up.clone().normalize();
+    const pitchAxis = new Vector3().crossVectors(viewDirection, yawAxis).normalize();
+
+    if (pitchAxis.lengthSq() < 0.000001) {
+      pitchAxis.set(1, 0, 0);
+    }
+
+    offset.applyAxisAngle(yawAxis, -deltaX * 0.012);
+    offset.applyAxisAngle(pitchAxis, -deltaY * 0.012);
+    this.camera.up.applyAxisAngle(pitchAxis, -deltaY * 0.012).normalize();
     this.camera.position.copy(target).add(offset);
-    this.camera.up.applyAxisAngle(axis, angle).normalize();
     this.camera.lookAt(target);
     this.controls.update();
     this.render();
@@ -410,13 +490,20 @@ export class VoxelScene {
     const { size, x, y } = gizmoViewport(rect.width, rect.height);
     const localX = event.clientX - rect.left - x;
     const localY = rect.bottom - event.clientY - y;
+    const normalizedX = localX / size;
+    const normalizedY = localY / size;
+
+    if (isInGizmoCenterDragZone(normalizedX, normalizedY)) {
+      return null;
+    }
+
     const pointer = new Vector2((localX / size) * 2 - 1, (localY / size) * 2 - 1);
 
     this.raycaster.setFromCamera(pointer, this.gizmoCamera);
     const intersections = this.raycaster.intersectObjects(this.gizmoRoot.children, true);
     const ball = intersections.find((intersection) => intersection.object.userData.surface)?.object;
 
-    return (ball?.userData.surface as SurfaceView | undefined) ?? fallbackGizmoSurface(localX / size, localY / size);
+    return (ball?.userData.surface as SurfaceView | undefined) ?? fallbackGizmoSurface(normalizedX, normalizedY);
   }
 
   private setPanelVisibility(showPanels: boolean, visiblePanels?: Partial<Record<SurfaceId, boolean>>): void {
@@ -784,25 +871,6 @@ function gizmoViewport(width: number, height: number): { size: number; x: number
   };
 }
 
-function gizmoAxisFromPointer(event: PointerEvent, canvas: HTMLCanvasElement): Vector3 {
-  const rect = canvas.getBoundingClientRect();
-  const { size, x, y } = gizmoViewport(rect.width, rect.height);
-  const localX = event.clientX - rect.left - x;
-  const localY = rect.bottom - event.clientY - y;
-  const normalizedX = localX / size;
-  const normalizedY = localY / size;
-
-  if (normalizedY > 0.66) {
-    return new Vector3(1, 0, 0);
-  }
-
-  if (normalizedX < 0.38) {
-    return new Vector3(0, 1, 0);
-  }
-
-  return new Vector3(0, 0, 1);
-}
-
 function fallbackGizmoSurface(normalizedX: number, normalizedY: number): SurfaceView | null {
   if (normalizedX > 0.78 && normalizedY > 0.36 && normalizedY < 0.64) {
     return "right";
@@ -821,6 +889,10 @@ function fallbackGizmoSurface(normalizedX: number, normalizedY: number): Surface
   }
 
   return null;
+}
+
+function isInGizmoCenterDragZone(normalizedX: number, normalizedY: number): boolean {
+  return (normalizedX - 0.5) ** 2 + (normalizedY - 0.5) ** 2 < 0.13 ** 2;
 }
 
 function disposeObject(object: Object3D): void {

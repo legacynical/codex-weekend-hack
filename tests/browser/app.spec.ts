@@ -1,4 +1,4 @@
-import { expect, type Locator, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 test("renders the workbench shell", async ({ page }) => {
   await page.goto("/");
@@ -288,6 +288,70 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
   await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
   expect(consoleIssues).toEqual([]);
 });
+
+test("keeps perspective view freely rotatable across repeated drags", async ({ page }) => {
+  await page.goto("/");
+
+  const canvas = page.getByTestId("voxel-viewer-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(page.getByText("3D ready")).toBeVisible();
+  await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
+
+  const observedPositions = new Set<string>();
+  let previousOrbitEvents = Number((await canvas.getAttribute("data-orbit-events")) ?? "0");
+  observedPositions.add((await canvas.getAttribute("data-camera-position")) ?? "");
+
+  for (let index = 0; index < 16; index += 1) {
+    const angle = (index / 16) * Math.PI * 2;
+    await dragCanvasWithMouse(page, canvas, {
+      endXRatio: 0.52 + Math.cos(angle) * 0.2,
+      endYRatio: 0.5 + Math.sin(angle) * 0.18 + 0.08,
+      startXRatio: 0.46,
+      startYRatio: 0.48,
+    });
+
+    await expect
+      .poll(async () => Number((await canvas.getAttribute("data-orbit-events")) ?? "0"))
+      .toBeGreaterThan(previousOrbitEvents);
+    previousOrbitEvents = Number((await canvas.getAttribute("data-orbit-events")) ?? "0");
+    observedPositions.add((await canvas.getAttribute("data-camera-position")) ?? "");
+    await expect.poll(async () => canvas.getAttribute("data-controls-enabled")).toBe("true");
+  }
+
+  expect(observedPositions.size).toBeGreaterThan(12);
+  await expect.poll(async () => canvasHasNonBackgroundPixels(canvas)).toBe(true);
+});
+
+async function dragCanvasWithMouse(
+  page: Page,
+  canvas: Locator,
+  {
+    endXRatio,
+    endYRatio,
+    startXRatio,
+    startYRatio,
+  }: {
+    endXRatio: number;
+    endYRatio: number;
+    startXRatio: number;
+    startYRatio: number;
+  },
+) {
+  const box = await canvas.boundingBox();
+
+  if (!box) {
+    throw new Error("Expected canvas bounds for perspective drag");
+  }
+
+  const start = { x: box.x + box.width * startXRatio, y: box.y + box.height * startYRatio };
+  const end = { x: box.x + box.width * endXRatio, y: box.y + box.height * endYRatio };
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, { steps: 4 });
+  await page.mouse.move(end.x, end.y, { steps: 4 });
+  await page.mouse.up();
+}
 
 async function canvasHasNonBackgroundPixels(canvas: Locator) {
   return canvas.evaluate(async (element) => {
