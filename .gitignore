@@ -8,3 +8,4 @@ playwright-report
 .env.local
 *.tsbuildinfo
 vite-dev.*.log
+/docs
