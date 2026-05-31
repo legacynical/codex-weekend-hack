@@ -121,6 +121,8 @@ export class VoxelScene {
     this.renderer.domElement.dataset.testid = "voxel-viewer-canvas";
     this.renderer.domElement.setAttribute("aria-label", "Swirl sphere 3D viewer");
     this.renderer.domElement.style.display = "block";
+    this.renderer.domElement.style.touchAction = "none";
+    this.renderer.domElement.style.userSelect = "none";
     this.renderer.domElement.style.width = "100%";
     this.renderer.domElement.style.height = "100%";
     this.renderer.domElement.addEventListener("pointerdown", this.handleGizmoPointerDown, true);
@@ -268,7 +270,7 @@ export class VoxelScene {
     this.renderer.domElement.dataset.activeSurface = view;
     const center = centerOf();
     const next = cameraPoseForSurface(view, this.sceneSize);
-    if (animate) {
+    if (animate && !prefersReducedMotion()) {
       this.animation = {
         startedAt: performance.now(),
         duration: 280,
@@ -644,6 +646,10 @@ export class VoxelScene {
       this.camera.position.copy(this.camera.position);
     }
   }
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 function createVoxelMeshes(volume: VoxelVolume): Group {

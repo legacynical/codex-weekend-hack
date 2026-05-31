@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Eye, Grid2X2, Layers, Shell } from "lucide-react";
+import { Box, CircleQuestionMark, Eye, Grid2X2, Layers, Shell, TriangleAlert } from "lucide-react";
 
 import { createSwirlSphere } from "@/benchmarks/swirlSphere";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
   type ProjectionMarker,
 } from "@/core/projection";
 import type { VoxelVolume } from "@/core/voxel";
+import { cn } from "@/lib/utils";
 import { VoxelScene } from "@/rendering/voxelScene";
 
 const surfaceViews = [
@@ -66,18 +67,22 @@ export function VoxelViewer() {
     () => benchmark.panels.filter((panel) => panel.surface && visiblePanels[panel.surface]),
     [benchmark.panels, visiblePanels],
   );
+  const visibleSurfaces = useMemo(
+    () => new Set(visiblePanelList.map((panel) => panel.surface).filter((surface): surface is SurfaceView => Boolean(surface))),
+    [visiblePanelList],
+  );
   const projected = useMemo(
     () =>
       reconstructProjectedInspectionHull(benchmark.volume.size, benchmark.panels, {
         hollow: showHollow,
         hollowSource,
-        visibleSurfaces: new Set(visiblePanelList.map((panel) => panel.surface).filter((surface): surface is SurfaceView => Boolean(surface))),
+        visibleSurfaces,
       }),
-    [benchmark.panels, benchmark.volume.size, hollowSource, showHollow, visiblePanelList],
+    [benchmark.panels, benchmark.volume.size, hollowSource, showHollow, visibleSurfaces],
   );
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
+    <div className="flex flex-col overflow-hidden rounded-md border bg-card shadow-sm">
       <VoxelCanvas
         volume={benchmark.volume}
         panels={benchmark.panels}
@@ -198,6 +203,8 @@ function VoxelCanvas({
     let mounted = true;
     let readyFrame: number | null = null;
 
+    setStatus("initializing");
+
     try {
       scene = new VoxelScene(host, {
         volume,
@@ -223,13 +230,21 @@ function VoxelCanvas({
         sceneRef.current = null;
       };
     } catch {
-      queueMicrotask(() => {
+      scene?.dispose();
+      sceneRef.current = null;
+      readyFrame = window.requestAnimationFrame(() => {
         if (mounted) {
           setStatus("unavailable");
         }
       });
-      scene?.dispose();
-      sceneRef.current = null;
+
+      return () => {
+        mounted = false;
+        if (readyFrame !== null) {
+          window.cancelAnimationFrame(readyFrame);
+        }
+        scene?.dispose();
+      };
     }
   }, [volume, panels, onActiveSurfaceChange]);
 
@@ -289,7 +304,7 @@ function VoxelCanvas({
               title="Voxels"
               onClick={() => onShowVoxelsChange((current) => !current)}
             >
-              <Box />
+              <Box aria-hidden="true" />
             </Button>
             <Button
               type="button"
@@ -300,7 +315,7 @@ function VoxelCanvas({
               title="Panels"
               onClick={() => onShowPanelsChange((current) => !current)}
             >
-              <Layers />
+              <Layers aria-hidden="true" />
             </Button>
             <Button
               type="button"
@@ -312,7 +327,7 @@ function VoxelCanvas({
               data-testid="voxel-projected-toggle"
               onClick={() => onShowProjectedChange((current) => !current)}
             >
-              <Eye />
+              <Eye aria-hidden="true" />
             </Button>
             <Button
               type="button"
@@ -324,7 +339,7 @@ function VoxelCanvas({
               data-testid="voxel-hollow-toggle"
               onClick={() => onShowHollowChange((current) => !current)}
             >
-              <Shell />
+              <Shell aria-hidden="true" />
             </Button>
             <Button
               type="button"
@@ -336,7 +351,7 @@ function VoxelCanvas({
               data-testid="voxel-outline-toggle"
               onClick={() => onShowOutlinesChange((current) => !current)}
             >
-              <Grid2X2 />
+              <Grid2X2 aria-hidden="true" />
             </Button>
             {surfaceViews.map(({ label, value }) => (
               <Button
@@ -388,7 +403,7 @@ function VoxelCanvas({
               data-testid="voxel-conflict-marker-toggle"
               onClick={() => onShowConflictMarkersChange((current) => !current)}
             >
-              x
+              <TriangleAlert aria-hidden="true" />
             </Button>
             <Button
               type="button"
@@ -400,15 +415,23 @@ function VoxelCanvas({
               data-testid="voxel-ambiguity-marker-toggle"
               onClick={() => onShowAmbiguityMarkersChange((current) => !current)}
             >
-              ?
+              <CircleQuestionMark aria-hidden="true" />
             </Button>
             {projectedConflictCount > 0 ? (
-              <span className="text-xs font-medium text-destructive" data-testid="projected-conflict-status">
+              <span
+                className="min-w-0 max-w-full text-pretty text-xs font-medium text-destructive"
+                aria-live="polite"
+                data-testid="projected-conflict-status"
+              >
                 {projectedConflictCount} ambiguous surface color conflicts
               </span>
             ) : null}
             {showHollow && projectedAmbiguityCount > 0 ? (
-              <span className="text-xs font-medium text-amber-500" data-testid="projected-ambiguity-status">
+              <span
+                className="min-w-0 max-w-full text-pretty text-xs font-medium text-amber-500"
+                aria-live="polite"
+                data-testid="projected-ambiguity-status"
+              >
                 {projectedAmbiguityCount} shell candidates
               </span>
             ) : null}
@@ -434,8 +457,8 @@ function VoxelCanvas({
       </div>
       <div className="flex items-center justify-between border-t bg-background/90 px-4 py-2">
         <span className="text-xs font-medium">3D voxel view</span>
-        <span className="text-xs text-muted-foreground">
-          {status === "ready" ? "3D ready" : status === "unavailable" ? "3D unavailable" : "3D initializing"}
+        <span className="text-xs text-muted-foreground" aria-live="polite" aria-label="3D view status">
+          {status === "ready" ? "3D ready" : status === "unavailable" ? "3D unavailable" : "3D initializing…"}
         </span>
       </div>
     </section>
@@ -476,6 +499,7 @@ function PanelPreview({ panel }: { panel: ViewPanel }) {
       <div
         className="grid aspect-square overflow-hidden rounded-sm border"
         style={{ gridTemplateColumns: `repeat(${panel.width}, minmax(0, 1fr))` }}
+        role="img"
         aria-label={`${panel.id} projected slice preview`}
       >
         {panel.pixels.map((pixel, index) => (
@@ -492,7 +516,7 @@ function PanelPreview({ panel }: { panel: ViewPanel }) {
 
 function PanelTile({ panel, emphasis, muted = false }: { panel: ViewPanel; emphasis: "large" | "small"; muted?: boolean }) {
   return (
-    <div className={["grid rounded-md border bg-background/90 p-2 shadow-sm", muted ? "opacity-45" : ""].join(" ")}>
+    <div className={cn("grid rounded-md border bg-background/90 p-2 shadow-sm", muted && "opacity-45")}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-xs font-medium">{panel.id}</span>
         <span className="text-xs text-muted-foreground">{panel.axis}</span>
@@ -505,8 +529,9 @@ function PanelTile({ panel, emphasis, muted = false }: { panel: ViewPanel; empha
 function PixelGrid({ panel, className }: { panel: ViewPanel; className?: string }) {
   return (
     <div
-      className={["grid aspect-square overflow-hidden rounded-sm border bg-muted/40", className ?? ""].join(" ")}
+      className={cn("grid aspect-square overflow-hidden rounded-sm border bg-muted/40", className)}
       style={{ gridTemplateColumns: `repeat(${panel.width}, minmax(0, 1fr))` }}
+      role="img"
       aria-label={`${panel.id} projected slice preview`}
     >
       {panel.pixels.map((pixel, index) => (
