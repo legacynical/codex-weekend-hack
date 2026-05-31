@@ -1,5 +1,5 @@
-import { getPanelPixel, type ViewPanel } from "@/core/panels";
-import { findSilhouetteMismatches, projectPoint, visibleSurfaceColor } from "@/core/projection";
+import type { ViewPanel } from "@/core/panels";
+import { findSilhouetteMismatches, projectionRayBoundaryPoint, visibleSurfaceColor } from "@/core/projection";
 import { makeVoxelMap, voxelKey, type VoxelPoint, type VoxelVolume } from "@/core/voxel";
 
 export type ValidationStatus = "valid" | "invalid" | "ambiguous";
@@ -153,19 +153,28 @@ export function hasNoEnclosedVoids(volume: VoxelVolume): boolean {
 }
 
 export function findColorMismatches(volume: VoxelVolume, panels: readonly ViewPanel[]): string[] {
-  return volume.voxels.flatMap((voxel) =>
-    panels.flatMap((panel) => {
-      const projected = projectPoint(voxel, panel.axis);
-      const panelPixel = getPanelPixel(panel, projected.x, projected.y);
-      const visibleColor = visibleSurfaceColor(volume, voxel, panel.axis);
+  return panels.flatMap((panel) => {
+    const mismatches: string[] = [];
 
-      if (!panelPixel.occupied || panelPixel.color === null || visibleColor === null || panelPixel.color === visibleColor) {
-        return [];
+    for (let index = 0; index < panel.pixels.length; index += 1) {
+      const panelPixel = panel.pixels[index];
+
+      if (!panelPixel?.occupied || panelPixel.color === null) {
+        continue;
       }
 
-      return [`${panel.id}:${projected.x},${projected.y}:expected-${panelPixel.color}:actual-${visibleColor}`];
-    }),
-  );
+      const x = index % panel.width;
+      const y = Math.floor(index / panel.width);
+      const rayPoint = projectionRayBoundaryPoint(volume.size, panel, x, y);
+      const visibleColor = visibleSurfaceColor(volume, rayPoint, panel.axis, panel.direction);
+
+      if (visibleColor !== null && panelPixel.color !== visibleColor) {
+        mismatches.push(`${panel.id}:${x},${y}:expected-${panelPixel.color}:actual-${visibleColor}`);
+      }
+    }
+
+    return mismatches;
+  });
 }
 
 function neighbors(point: VoxelPoint): VoxelPoint[] {

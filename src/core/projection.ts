@@ -194,16 +194,43 @@ export function findSilhouetteMismatches(volume: VoxelVolume, panels: readonly V
   });
 }
 
-export function visibleSurfaceColor(volume: VoxelVolume, point: VoxelPoint, axis: ProjectionView["axis"]): string | null {
+export function visibleSurfaceColor(
+  volume: VoxelVolume,
+  point: VoxelPoint,
+  axis: ProjectionView["axis"],
+  direction: ProjectionView["direction"] = -1,
+): string | null {
   const voxelMap = makeVoxelMap(volume.voxels);
 
   switch (axis) {
     case "x":
-      return findFirstVisibleColor(voxelMap, { ...point, x: 0 }, { ...point, x: volume.size.x });
+      return direction < 0
+        ? findFirstVisibleColor(voxelMap, { ...point, x: 0 }, { ...point, x: volume.size.x })
+        : findFirstVisibleColor(voxelMap, { ...point, x: volume.size.x - 1 }, { ...point, x: -1 });
     case "y":
-      return findFirstVisibleColor(voxelMap, { ...point, y: 0 }, { ...point, y: volume.size.y });
+      return direction < 0
+        ? findFirstVisibleColor(voxelMap, { ...point, y: 0 }, { ...point, y: volume.size.y })
+        : findFirstVisibleColor(voxelMap, { ...point, y: volume.size.y - 1 }, { ...point, y: -1 });
     case "z":
-      return findFirstVisibleColor(voxelMap, { ...point, z: 0 }, { ...point, z: volume.size.z });
+      return direction < 0
+        ? findFirstVisibleColor(voxelMap, { ...point, z: 0 }, { ...point, z: volume.size.z })
+        : findFirstVisibleColor(voxelMap, { ...point, z: volume.size.z - 1 }, { ...point, z: -1 });
+  }
+}
+
+export function projectionRayBoundaryPoint(
+  size: GridSize,
+  panel: Pick<ViewPanel, "axis" | "direction">,
+  x: number,
+  y: number,
+): VoxelPoint {
+  switch (panel.axis) {
+    case "x":
+      return { x: panel.direction && panel.direction > 0 ? size.x - 1 : 0, y: x, z: y };
+    case "y":
+      return { x, y: panel.direction && panel.direction > 0 ? size.y - 1 : 0, z: y };
+    case "z":
+      return { x, y, z: panel.direction && panel.direction > 0 ? size.z - 1 : 0 };
   }
 }
 
@@ -338,33 +365,10 @@ function markerFromPanelPixel(
   label: ProjectionMarker["label"],
   color: string,
 ): ProjectionMarker {
-  switch (panel.axis) {
-    case "x":
-      return {
-        x: panel.direction && panel.direction < 0 ? 0 : size.x - 1,
-        y: x,
-        z: y,
-        label,
-        color,
-        surface: panel.surface,
-      };
-    case "y":
-      return {
-        x,
-        y: panel.direction && panel.direction < 0 ? 0 : size.y - 1,
-        z: y,
-        label,
-        color,
-        surface: panel.surface,
-      };
-    case "z":
-      return {
-        x,
-        y,
-        z: panel.direction && panel.direction < 0 ? 0 : size.z - 1,
-        label,
-        color,
-        surface: panel.surface,
-      };
-  }
+  return {
+    ...projectionRayBoundaryPoint(size, panel, x, y),
+    label,
+    color,
+    surface: panel.surface,
+  };
 }

@@ -10,6 +10,7 @@ import {
   reconstructProjectedHull,
   reconstructVisualHull,
   surfaceViews,
+  visibleSurfaceColor,
 } from "@/core/projection";
 import { isInsideSphere, type VoxelVolume } from "@/core/voxel";
 import {
@@ -189,6 +190,43 @@ describe("swirl sphere benchmark", () => {
     expect(corruptedReport.geometry.silhouetteMismatches).toEqual([]);
     expect(corruptedReport.color.coherent).toBe(false);
     expect(corruptedReport.failureReasons).toContain("Surface colors conflict with projected panels");
+  });
+
+  it("validates signed surface colors from the matching viewing direction", () => {
+    const volume: VoxelVolume = {
+      size: { x: 1, y: 2, z: 1 },
+      voxels: [
+        { x: 0, y: 0, z: 0, color: "#ff0000" },
+        { x: 0, y: 1, z: 0, color: "#0000ff" },
+      ],
+    };
+    const panels = projectVolumeToSurfacePanels(volume);
+    const front = panels.find((panel) => panel.id === "front") as ViewPanel;
+    const back = panels.find((panel) => panel.id === "back") as ViewPanel;
+    const report = validateVoxelCandidate(volume, [front, back]);
+
+    expect(visibleSurfaceColor(volume, { x: 0, y: 0, z: 0 }, "y", -1)).toBe("#ff0000");
+    expect(visibleSurfaceColor(volume, { x: 0, y: 1, z: 0 }, "y", 1)).toBe("#0000ff");
+    expect(report.color.coherent).toBe(true);
+    expect(report.color.mismatches).toEqual([]);
+  });
+
+  it("reports signed surface color mismatches once per projected ray", () => {
+    const volume: VoxelVolume = {
+      size: { x: 1, y: 2, z: 1 },
+      voxels: [
+        { x: 0, y: 0, z: 0, color: "#ff0000" },
+        { x: 0, y: 1, z: 0, color: "#0000ff" },
+      ],
+    };
+    const back = projectVolumeToSurfacePanels(volume).find((panel) => panel.id === "back") as ViewPanel;
+    const corruptedBack = {
+      ...back,
+      pixels: back.pixels.map((pixel) => (pixel.occupied ? { ...pixel, color: "#00ff00" } : pixel)),
+    };
+    const report = validateVoxelCandidate(volume, [corruptedBack]);
+
+    expect(report.color.mismatches).toEqual(["back:0,0:expected-#00ff00:actual-#0000ff"]);
   });
 
   it("keeps the benchmark validation lanes aligned with current UI labels", () => {
