@@ -57,14 +57,11 @@ export function isConnected(volume: VoxelVolume): boolean {
   const voxelMap = makeVoxelMap(volume.voxels);
   const visited = new Set<string>();
   const queue = [volume.voxels[0] as VoxelPoint];
+  let queueIndex = 0;
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-
-    if (!current) {
-      break;
-    }
-
+  while (queueIndex < queue.length) {
+    const current = queue[queueIndex];
+    queueIndex += 1;
     const currentKey = voxelKey(current);
 
     if (visited.has(currentKey)) {
@@ -101,6 +98,7 @@ export function hasNoEnclosedVoids(volume: VoxelVolume): boolean {
   const occupied = makeVoxelMap(volume.voxels);
   const exterior = new Set<string>();
   const queue: VoxelPoint[] = [];
+  let queueIndex = 0;
 
   for (let z = 0; z < volume.size.z; z += 1) {
     for (let y = 0; y < volume.size.y; y += 1) {
@@ -114,13 +112,9 @@ export function hasNoEnclosedVoids(volume: VoxelVolume): boolean {
     }
   }
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-
-    if (!current) {
-      break;
-    }
-
+  while (queueIndex < queue.length) {
+    const current = queue[queueIndex];
+    queueIndex += 1;
     const currentKey = voxelKey(current);
 
     if (exterior.has(currentKey) || occupied.has(currentKey)) {
