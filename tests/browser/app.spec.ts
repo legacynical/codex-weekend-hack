@@ -8,6 +8,10 @@ test("renders the workbench shell", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /inspect constrained voxel candidates/i })).toBeVisible();
   await expect(page.getByText("Swirl sphere inspection")).toBeVisible();
   await expect(page.getByText("Surface color agreement")).toBeVisible();
+
+  await page.getByRole("button", { name: "Upload Grid" }).click();
+  await expect(page.getByTestId("upload-slots-tab")).toBeVisible();
+  await expect(page.getByLabel("front face image")).toBeAttached();
 });
 
 test("renders a nonblank voxel viewer with surface controls and gizmo navigation", async ({ page }) => {

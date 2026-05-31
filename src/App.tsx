@@ -78,9 +78,15 @@ function App() {
               <p className="text-xs text-muted-foreground">browser-first experiment scaffold</p>
             </div>
           </div>
-          <Button variant="outline" size="sm">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-controls="assets-panel"
+            onClick={() => setActiveAssetTab("uploads")}
+          >
             <Upload className="size-4" aria-hidden="true" />
-            Upload grid
+            Upload Grid
           </Button>
         </header>
 
@@ -107,7 +113,7 @@ function App() {
             <VoxelViewer />
           </section>
 
-          <aside className="grid gap-4">
+          <aside className="grid content-start gap-4">
             <Card>
               <CardHeader>
                 <CardTitle>Assets</CardTitle>
@@ -118,8 +124,8 @@ function App() {
                   </Badge>
                 </CardAction>
               </CardHeader>
-              <CardContent className="grid gap-4" data-testid="assets-card">
-                <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1" aria-label="Asset tabs">
+              <CardContent id="assets-panel" className="grid gap-4" data-testid="assets-card">
+                <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1" role="group" aria-label="Asset tabs">
                   {assetTabs.map((tab) => (
                     <Button
                       key={tab}
@@ -220,9 +226,9 @@ function TemplateDownloadItem({ size }: { size: GridTemplateSize }) {
   return (
     <div className="grid gap-3 rounded-md border bg-background p-3 sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:items-center">
       <SquareGridPreview size={size} />
-      <div className="grid gap-1">
+      <div className="grid min-w-0 gap-1">
         <span className="text-sm font-medium">{size} x {size} grid</span>
-        <span className="text-xs text-muted-foreground">
+        <span className="truncate text-xs text-muted-foreground">
           {metrics.width} x {metrics.height} PNG, {metrics.cellPixels}px cells
         </span>
       </div>
@@ -230,6 +236,7 @@ function TemplateDownloadItem({ size }: { size: GridTemplateSize }) {
         type="button"
         variant="outline"
         size="sm"
+        aria-label={`Download ${size} x ${size} PNG template`}
         data-testid={`template-download-${size}`}
         onClick={() => downloadGridTemplatePng(size)}
       >
@@ -255,7 +262,7 @@ function UploadSlots({
     <div className="grid gap-4" data-testid="upload-slots-tab">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">Configured resolution</span>
-        <div className="flex gap-1" aria-label="Upload slot resolution">
+        <div className="flex gap-1" role="group" aria-label="Upload slot resolution">
           {gridTemplateSizes.map((size) => (
             <Button
               key={size}
@@ -272,27 +279,56 @@ function UploadSlots({
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         {faceSlots.map((slot) => (
-          <label key={slot} className="grid gap-2 rounded-md border bg-background p-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium capitalize">{slot}</span>
-              <Badge variant="outline" className="font-normal">
-                {resolution} x {resolution}
-              </Badge>
-            </div>
-            <input
-              className="sr-only"
-              type="file"
-              accept="image/png,image/webp,image/jpeg"
-              aria-label={`${slot} face image`}
-              onChange={(event) => onSlotFileChange(slot, event.currentTarget.files?.[0]?.name ?? "")}
-            />
-            <span className="inline-flex h-7 items-center justify-center rounded-md border bg-muted px-2 text-xs font-medium">
-              {uploadedSlotNames[slot] || "Choose image"}
-            </span>
-          </label>
+          <FileSlotPicker
+            key={slot}
+            slot={slot}
+            resolution={resolution}
+            fileName={uploadedSlotNames[slot]}
+            onFileNameChange={(fileName) => onSlotFileChange(slot, fileName)}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+function FileSlotPicker({
+  slot,
+  resolution,
+  fileName,
+  onFileNameChange,
+}: {
+  slot: FaceSlot;
+  resolution: GridTemplateSize;
+  fileName?: string;
+  onFileNameChange: (fileName: string) => void;
+}) {
+  const displayName = fileName || "Choose Image";
+
+  return (
+    <label className="group/file-slot grid min-w-0 cursor-pointer gap-2 rounded-md border bg-background p-3 transition-colors hover:bg-muted/40 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-sm font-medium capitalize">{slot}</span>
+        <Badge variant="outline" className="font-normal">
+          {resolution} x {resolution}
+        </Badge>
+      </div>
+      <input
+        className="sr-only"
+        type="file"
+        name={`${slot}-face-image`}
+        accept="image/png,image/webp,image/jpeg"
+        aria-label={`${slot} face image`}
+        onChange={(event) => onFileNameChange(event.currentTarget.files?.[0]?.name ?? "")}
+      />
+      <span
+        className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border bg-muted px-2 text-xs font-medium"
+        title={displayName}
+      >
+        <Upload className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">{displayName}</span>
+      </span>
+    </label>
   );
 }
 
@@ -310,6 +346,7 @@ function SquareGridPreview({ size }: { size: GridTemplateSize }) {
         ].join(", "),
         backgroundSize: `calc(100% / ${size}) calc(100% / ${size})`,
       }}
+      role="img"
       aria-label={`${size} square grid preview`}
     />
   );
