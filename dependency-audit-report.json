@@ -1,0 +1,531 @@
+{
+  "advisories": {
+    "1120082": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120082,
+      "title": "Hono: IP Restriction bypasses static deny rules for non-canonical IPv6 ",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.21",
+      "patched_versions": ">=4.12.21",
+      "severity": "moderate",
+      "cwe": "CWE-185, CWE-1289",
+      "github_advisory_id": "GHSA-xrhx-7g5j-rcj5",
+      "url": "https://github.com/advisories/GHSA-xrhx-7g5j-rcj5"
+    },
+    "1120083": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120083,
+      "title": "Hono: Cookie helper does not sanitize sameSite and priority, allowing Set-Cookie injection",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.21",
+      "patched_versions": ">=4.12.21",
+      "severity": "moderate",
+      "cwe": "CWE-113, CWE-1287",
+      "github_advisory_id": "GHSA-3hrh-pfw6-9m5x",
+      "url": "https://github.com/advisories/GHSA-3hrh-pfw6-9m5x"
+    },
+    "1120084": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120084,
+      "title": "Hono: JWT middleware accepts any Authorization scheme, not only Bearer",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.21",
+      "patched_versions": ">=4.12.21",
+      "severity": "moderate",
+      "cwe": "CWE-285",
+      "github_advisory_id": "GHSA-f577-qrjj-4474",
+      "url": "https://github.com/advisories/GHSA-f577-qrjj-4474"
+    },
+    "1120085": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120085,
+      "title": "Hono: app.mount() strips mount prefix using undecoded path, causing incorrect routing for percent-encoded paths",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.21",
+      "patched_versions": ">=4.12.21",
+      "severity": "moderate",
+      "cwe": "CWE-444, CWE-693",
+      "github_advisory_id": "GHSA-2gcr-mfcq-wcc3",
+      "url": "https://github.com/advisories/GHSA-2gcr-mfcq-wcc3"
+    },
+    "1120786": {
+      "findings": [
+        {
+          "version": "8.0.10",
+          "paths": [
+            ".>@tailwindcss/vite>vite",
+            ".>@vitejs/plugin-react>vite",
+            ".>vite",
+            ".>vitest>@vitest/mocker>vite",
+            ".>vitest>vite"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120786,
+      "title": "launch-editor: NTLMv2 hash disclosure via UNC path handling on Windows",
+      "module_name": "vite",
+      "vulnerable_versions": ">=8.0.0 <=8.0.15",
+      "patched_versions": ">=8.0.16",
+      "severity": "moderate",
+      "cwe": "CWE-73, CWE-522",
+      "github_advisory_id": "GHSA-v6wh-96g9-6wx3",
+      "url": "https://github.com/advisories/GHSA-v6wh-96g9-6wx3"
+    },
+    "1120791": {
+      "findings": [
+        {
+          "version": "8.0.10",
+          "paths": [
+            ".>@tailwindcss/vite>vite",
+            ".>@vitejs/plugin-react>vite",
+            ".>vite",
+            ".>vitest>@vitest/mocker>vite",
+            ".>vitest>vite"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120791,
+      "title": "vite: `server.fs.deny` bypass on Windows alternate paths",
+      "module_name": "vite",
+      "vulnerable_versions": ">=8.0.0 <=8.0.15",
+      "patched_versions": ">=8.0.16",
+      "severity": "high",
+      "cwe": "CWE-22, CWE-200",
+      "github_advisory_id": "GHSA-fx2h-pf6j-xcff",
+      "url": "https://github.com/advisories/GHSA-fx2h-pf6j-xcff"
+    },
+    "1120793": {
+      "findings": [
+        {
+          "version": "7.29.0",
+          "paths": [
+            ".>eslint-plugin-react-hooks>@babel/core",
+            ".>shadcn>@babel/core",
+            ".>shadcn>@babel/plugin-transform-typescript>@babel/core",
+            ".>shadcn>@babel/plugin-transform-typescript>@babel/helper-create-class-features-plugin>@babel/core",
+            ".>shadcn>@babel/plugin-transform-typescript>@babel/helper-create-class-features-plugin>@babel/helper-replace-supers>@babel/core",
+            ".>shadcn>@babel/plugin-transform-typescript>@babel/plugin-syntax-typescript>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/plugin-syntax-jsx>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/plugin-transform-modules-commonjs>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/plugin-transform-modules-commonjs>@babel/helper-module-transforms>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/plugin-transform-typescript>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/plugin-transform-typescript>@babel/helper-create-class-features-plugin>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/plugin-transform-typescript>@babel/helper-create-class-features-plugin>@babel/helper-replace-supers>@babel/core",
+            ".>shadcn>@babel/preset-typescript>@babel/plugin-transform-typescript>@babel/plugin-syntax-typescript>@babel/core"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120793,
+      "title": "@babel/core: Arbitrary File Read via sourceMappingURL Comment",
+      "module_name": "@babel/core",
+      "vulnerable_versions": "<=7.29.0",
+      "patched_versions": ">=7.29.1",
+      "severity": "low",
+      "cwe": "CWE-22, CWE-200",
+      "github_advisory_id": "GHSA-4x5r-pxfx-6jf8",
+      "url": "https://github.com/advisories/GHSA-4x5r-pxfx-6jf8"
+    },
+    "1120910": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120910,
+      "title": "hono: Path traversal in `serve-static` on Windows via encoded backslash (`%5C`)",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.25",
+      "patched_versions": ">=4.12.25",
+      "severity": "moderate",
+      "cwe": "CWE-22",
+      "github_advisory_id": "GHSA-wwfh-h76j-fc44",
+      "url": "https://github.com/advisories/GHSA-wwfh-h76j-fc44"
+    },
+    "1120911": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120911,
+      "title": "hono: AWS Lambda adapter merges multiple `Set-Cookie` headers into one value, dropping cookies on ALB single-header and Lattice",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.25",
+      "patched_versions": ">=4.12.25",
+      "severity": "moderate",
+      "cwe": "CWE-116",
+      "github_advisory_id": "GHSA-j6c9-x7qj-28xf",
+      "url": "https://github.com/advisories/GHSA-j6c9-x7qj-28xf"
+    },
+    "1120913": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120913,
+      "title": "hono: CORS Middleware reflects any Origin with credentials when `origin` defaults to the wildcard",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.25",
+      "patched_versions": ">=4.12.25",
+      "severity": "high",
+      "cwe": "CWE-942",
+      "github_advisory_id": "GHSA-88fw-hqm2-52qc",
+      "url": "https://github.com/advisories/GHSA-88fw-hqm2-52qc"
+    },
+    "1120921": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120921,
+      "title": "hono: Body Limit Middleware can be bypassed on AWS Lambda by understating `Content-Length`",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.25",
+      "patched_versions": ">=4.12.25",
+      "severity": "moderate",
+      "cwe": "CWE-345",
+      "github_advisory_id": "GHSA-rv63-4mwf-qqc2",
+      "url": "https://github.com/advisories/GHSA-rv63-4mwf-qqc2"
+    },
+    "1120922": {
+      "findings": [
+        {
+          "version": "4.12.18",
+          "paths": [
+            ".>shadcn>@modelcontextprotocol/sdk>@hono/node-server>hono",
+            ".>shadcn>@modelcontextprotocol/sdk>hono"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1120922,
+      "title": "hono: Lambda@Edge adapter keeps only the last value of a repeated request header, dropping the rest",
+      "module_name": "hono",
+      "vulnerable_versions": "<4.12.25",
+      "patched_versions": ">=4.12.25",
+      "severity": "moderate",
+      "cwe": "CWE-348",
+      "github_advisory_id": "GHSA-wgpf-jwqj-8h8p",
+      "url": "https://github.com/advisories/GHSA-wgpf-jwqj-8h8p"
+    },
+    "1121821": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121821,
+      "title": "pnpm: Repository-controlled configDependencies can select a pacquet native install engine",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.5.3",
+      "patched_versions": ">=11.5.3",
+      "severity": "high",
+      "cwe": "CWE-78, CWE-494, CWE-829",
+      "github_advisory_id": "GHSA-gj8w-mvpf-x27x",
+      "url": "https://github.com/advisories/GHSA-gj8w-mvpf-x27x"
+    },
+    "1121823": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121823,
+      "title": "pnpm: Manifest identity spoof satisfies allowBuilds and runs attacker lifecycle",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.5.3",
+      "patched_versions": ">=11.5.3",
+      "severity": "high",
+      "cwe": "CWE-346, CWE-693, CWE-829",
+      "github_advisory_id": "GHSA-5wx6-mg75-v57r",
+      "url": "https://github.com/advisories/GHSA-5wx6-mg75-v57r"
+    },
+    "1121825": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121825,
+      "title": "pnpm: Repository config can expand victim environment secrets into registry requests before scripts run",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.5.3",
+      "patched_versions": ">=11.5.3",
+      "severity": "moderate",
+      "cwe": "CWE-200, CWE-201, CWE-522",
+      "github_advisory_id": "GHSA-3qhv-2rgh-x77r",
+      "url": "https://github.com/advisories/GHSA-3qhv-2rgh-x77r"
+    },
+    "1121827": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121827,
+      "title": "pnpm: `stage download` writes outside its destination directory via manifest name/version traversal",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.3.0 <11.5.3",
+      "patched_versions": ">=11.5.3",
+      "severity": "high",
+      "cwe": "CWE-22, CWE-73",
+      "github_advisory_id": "GHSA-v23m-ccfg-pq9h",
+      "url": "https://github.com/advisories/GHSA-v23m-ccfg-pq9h"
+    },
+    "1121828": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121828,
+      "title": "pnpm: Reserved bin name deletes PNPM_HOME during global remove",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.5.3",
+      "patched_versions": ">=11.5.3",
+      "severity": "moderate",
+      "cwe": "CWE-22, CWE-73",
+      "github_advisory_id": "GHSA-4gxm-v5v7-fqc4",
+      "url": "https://github.com/advisories/GHSA-4gxm-v5v7-fqc4"
+    },
+    "1121830": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121830,
+      "title": "pnpm: Project env lockfile can short-circuit package-manager resolution and execute lockfile-selected pnpm bytes",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.5.3",
+      "patched_versions": ">=11.5.3",
+      "severity": "high",
+      "cwe": "CWE-345, CWE-494, CWE-829",
+      "github_advisory_id": "GHSA-w466-c33r-3gjp",
+      "url": "https://github.com/advisories/GHSA-w466-c33r-3gjp"
+    },
+    "1121832": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121832,
+      "title": "pnpm: `patch-remove` could delete project-selected files outside the patches directory",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.7.0",
+      "patched_versions": ">=11.7.0",
+      "severity": "high",
+      "cwe": "CWE-22, CWE-73",
+      "github_advisory_id": "GHSA-72r4-9c5j-mj57",
+      "url": "https://github.com/advisories/GHSA-72r4-9c5j-mj57"
+    },
+    "1121834": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121834,
+      "title": "pnpm: Hoisted install imports lockfile alias outside node_modules",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.7.0",
+      "patched_versions": ">=11.7.0",
+      "severity": "high",
+      "cwe": "CWE-22, CWE-73",
+      "github_advisory_id": "GHSA-fr4h-3cph-29xv",
+      "url": "https://github.com/advisories/GHSA-fr4h-3cph-29xv"
+    },
+    "1121836": {
+      "findings": [
+        {
+          "version": "11.5.0",
+          "paths": [
+            "packageManagerDependencies>pnpm"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121836,
+      "title": "pnpm: Path traversal in configDependencies env lockfile allows symlink creation outside node_modules/.pnpm-config",
+      "module_name": "pnpm",
+      "vulnerable_versions": ">=11.0.0 <11.8.0",
+      "patched_versions": ">=11.8.0",
+      "severity": "high",
+      "cwe": "CWE-22",
+      "github_advisory_id": "GHSA-qrv3-253h-g69c",
+      "url": "https://github.com/advisories/GHSA-qrv3-253h-g69c"
+    },
+    "1121860": {
+      "findings": [
+        {
+          "version": "4.1.1",
+          "paths": [
+            ".>shadcn>cosmiconfig>js-yaml"
+          ],
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1121860,
+      "title": "JS-YAML: Quadratic-complexity DoS in merge key handling via repeated aliases",
+      "module_name": "js-yaml",
+      "vulnerable_versions": ">=4.0.0 <=4.1.1",
+      "patched_versions": ">=4.1.2",
+      "severity": "moderate",
+      "cwe": "CWE-407",
+      "github_advisory_id": "GHSA-h67p-54hq-rp68",
+      "url": "https://github.com/advisories/GHSA-h67p-54hq-rp68"
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 1,
+      "moderate": 12,
+      "high": 9,
+      "critical": 0
+    },
+    "dependencies": 26,
+    "devDependencies": 514,
+    "optionalDependencies": 60,
+    "totalDependencies": 555
+  }
+}
