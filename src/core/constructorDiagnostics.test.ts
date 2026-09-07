@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { CellClassification } from "@/assets/assetProcessing";
 import {
+  createConstructorDiagnosticReport,
   createPanelReadinessDiagnosticReport,
   markConstructorDiagnosticReportStale,
 } from "@/core/constructorDiagnostics";
+import type { ValidationReport } from "@/validation/voxelValidation";
 import {
   deriveActivatedPanelSet,
   semanticPlaneSlots,
@@ -135,7 +137,66 @@ describe("constructor diagnostics", () => {
     expect(staleReport.findings).toBe(report.findings);
     expect(staleReport.counts).toBe(report.counts);
   });
+
+  it("routes construction validation and marker findings to their owning subsystems", () => {
+    const report = createConstructorDiagnosticReport({
+      preset: 16,
+      validationReport: makeValidationReport({
+        connected: false,
+        silhouetteMismatches: ["front:0,0"],
+        colorMismatches: ["back:0,0"],
+      }),
+      conflictMarkers: [{ x: 0, y: 0, z: 0, label: "x", color: "#ef4444" }],
+      ambiguityMarkers: [{ x: 1, y: 1, z: 1, label: "?", color: "#facc15" }],
+    });
+
+    expect(report.status).toBe("conflicted");
+    expect(report.counts).toMatchObject({
+      errors: 4,
+      warnings: 1,
+      conflicts: 1,
+      ambiguityMarkers: 1,
+    });
+    expect(report.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "disconnectedVolume", sourceOwner: "modelConstruction" }),
+      expect.objectContaining({ code: "silhouetteMismatch", sourceOwner: "modelConstruction" }),
+      expect.objectContaining({ code: "surfaceColorMismatch", sourceOwner: "candidateResolver" }),
+      expect.objectContaining({ code: "surfaceColorConflict", sourceOwner: "candidateResolver" }),
+      expect.objectContaining({ code: "underSpecifiedCandidate", sourceOwner: "candidateResolver" }),
+    ]));
+  });
 });
+
+function makeValidationReport({
+  connected = true,
+  silhouetteMismatches = [],
+  colorMismatches = [],
+}: Partial<{
+  connected: boolean;
+  silhouetteMismatches: readonly string[];
+  colorMismatches: readonly string[];
+}> = {}): ValidationReport {
+  const failureReasons = [
+    !connected ? "Volume is disconnected" : null,
+    silhouetteMismatches.length > 0 ? "Volume does not match input silhouettes" : null,
+    colorMismatches.length > 0 ? "Surface colors conflict with projected panels" : null,
+  ].filter((reason): reason is string => reason !== null);
+
+  return {
+    status: failureReasons.length > 0 ? "invalid" : "valid",
+    geometry: {
+      connected,
+      watertight: true,
+      unsupportedFloatingVoxels: [],
+      silhouetteMismatches,
+    },
+    color: {
+      coherent: colorMismatches.length === 0,
+      mismatches: colorMismatches,
+    },
+    failureReasons,
+  };
+}
 
 function makePanelAssets(
   overrides: Partial<Record<SemanticPlaneSlot, Partial<PanelAsset>>> = {},

@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, CircleQuestionMark, Eye, Grid2X2, Layers, Shell, TriangleAlert } from "lucide-react";
 
-import { createSwirlSphere } from "@/benchmarks/swirlSphere";
 import { Button } from "@/components/ui/button";
 import type { ViewPanel } from "@/core/panels";
 import {
-  projectVolumeToSurfacePanels,
   reconstructProjectedInspectionHull,
   type ProjectedInspectionSourceMode,
   type ProjectionMarker,
@@ -26,6 +24,16 @@ const surfaceViews = [
 type SurfaceView = (typeof surfaceViews)[number]["value"];
 type PanelVisibility = Record<SurfaceView, boolean>;
 
+export type VoxelViewerData = Readonly<{
+  volume: VoxelVolume;
+  panels: readonly ViewPanel[];
+  conflictMarkers: readonly ProjectionMarker[];
+  ambiguityMarkers: readonly ProjectionMarker[];
+  title: string;
+  detail: string;
+  source: "project" | "benchmark-fallback";
+}>;
+
 const initialPanelVisibility: PanelVisibility = {
   back: true,
   bottom: true,
@@ -44,7 +52,7 @@ const surfaceShortLabels: Record<SurfaceView, string> = {
   top: "T",
 };
 
-export function VoxelViewer() {
+export function VoxelViewer({ data }: { data: VoxelViewerData }) {
   const [activeSurface, setActiveSurface] = useState<SurfaceView>("front");
   const [showVoxels, setShowVoxels] = useState(true);
   const [showPanels, setShowPanels] = useState(true);
@@ -55,17 +63,9 @@ export function VoxelViewer() {
   const [showAmbiguityMarkers, setShowAmbiguityMarkers] = useState(true);
   const [hollowSource, setHollowSource] = useState<ProjectedInspectionSourceMode>("visible-panel-hollow");
   const [visiblePanels, setVisiblePanels] = useState<PanelVisibility>(initialPanelVisibility);
-  const benchmark = useMemo(() => {
-    const volume = createSwirlSphere({ x: 16, y: 16, z: 16 });
-
-    return {
-      volume,
-      panels: projectVolumeToSurfacePanels(volume),
-    };
-  }, []);
   const visiblePanelList = useMemo(
-    () => benchmark.panels.filter((panel) => panel.surface && visiblePanels[panel.surface]),
-    [benchmark.panels, visiblePanels],
+    () => data.panels.filter((panel) => panel.surface && visiblePanels[panel.surface]),
+    [data.panels, visiblePanels],
   );
   const visibleSurfaces = useMemo(
     () => new Set(visiblePanelList.map((panel) => panel.surface).filter((surface): surface is SurfaceView => Boolean(surface))),
@@ -73,22 +73,24 @@ export function VoxelViewer() {
   );
   const projected = useMemo(
     () =>
-      reconstructProjectedInspectionHull(benchmark.volume.size, benchmark.panels, {
+      reconstructProjectedInspectionHull(data.volume.size, data.panels, {
         hollow: showHollow,
         hollowSource,
         visibleSurfaces,
       }),
-    [benchmark.panels, benchmark.volume.size, hollowSource, showHollow, visibleSurfaces],
+    [data.panels, data.volume.size, hollowSource, showHollow, visibleSurfaces],
   );
+  const conflictMarkers = data.conflictMarkers.length > 0 ? data.conflictMarkers : projected.conflictMarkers;
+  const ambiguityMarkers = showHollow ? projected.ambiguityMarkers : data.ambiguityMarkers;
 
   return (
     <div className="flex flex-col overflow-hidden rounded-md border bg-card shadow-sm">
       <VoxelCanvas
-        volume={benchmark.volume}
-        panels={benchmark.panels}
+        volume={data.volume}
+        panels={data.panels}
         projectedVolume={projected.volume}
-        conflictMarkers={projected.conflictMarkers}
-        ambiguityMarkers={projected.ambiguityMarkers}
+        conflictMarkers={conflictMarkers}
+        ambiguityMarkers={ambiguityMarkers}
         activeSurface={activeSurface}
         showVoxels={showVoxels}
         showPanels={showPanels}
@@ -99,8 +101,8 @@ export function VoxelViewer() {
         showAmbiguityMarkers={showAmbiguityMarkers}
         hollowSource={hollowSource}
         visiblePanels={visiblePanels}
-        projectedConflictCount={projected.colorConflicts.length}
-        projectedAmbiguityCount={projected.ambiguityMarkers.length}
+        projectedConflictCount={Math.max(projected.colorConflicts.length, conflictMarkers.length)}
+        projectedAmbiguityCount={ambiguityMarkers.length}
         onActiveSurfaceChange={setActiveSurface}
         onShowVoxelsChange={setShowVoxels}
         onShowPanelsChange={setShowPanels}
@@ -113,18 +115,21 @@ export function VoxelViewer() {
         onVisiblePanelsChange={setVisiblePanels}
       />
       <div className="border-t bg-muted" data-testid="voxel-viewer">
-        <SliceWorkspacePreview panels={benchmark.panels} visiblePanels={visiblePanels} />
+        <SliceWorkspacePreview panels={data.panels} visiblePanels={visiblePanels} />
       </div>
       <div className="grid gap-3 border-t bg-card px-4 py-3 sm:grid-cols-2 lg:grid-cols-3">
-        {benchmark.panels.map((panel) => (
+        {data.panels.map((panel) => (
           <PanelPreview key={panel.id} panel={panel} />
         ))}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-background/90 px-4 py-3">
         <div>
-          <p className="text-sm font-medium">Swirl sphere inspection</p>
-          <p className="text-xs text-muted-foreground">16 voxel preset with six signed projected surfaces</p>
+          <p className="text-sm font-medium">{data.title}</p>
+          <p className="text-xs text-muted-foreground">{data.detail}</p>
         </div>
+        <span className="text-xs font-medium text-muted-foreground" data-testid="voxel-viewer-source">
+          {data.source === "project" ? "project output" : "benchmark fallback"}
+        </span>
       </div>
     </div>
   );
@@ -189,8 +194,16 @@ function VoxelCanvas({
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<VoxelScene | null>(null);
-  const initialViewRef = useRef(activeSurface);
+  const currentViewRef = useRef(activeSurface);
   const [status, setStatus] = useState<"initializing" | "ready" | "unavailable">("initializing");
+  const sceneInput = useMemo(
+    () => ({ volume, panels, onSurfaceChange: onActiveSurfaceChange }),
+    [volume, panels, onActiveSurfaceChange],
+  );
+
+  useEffect(() => {
+    currentViewRef.current = activeSurface;
+  }, [activeSurface]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -207,10 +220,8 @@ function VoxelCanvas({
 
     try {
       scene = new VoxelScene(host, {
-        volume,
-        panels,
-        initialView: initialViewRef.current,
-        onSurfaceChange: onActiveSurfaceChange,
+        ...sceneInput,
+        initialView: currentViewRef.current,
       });
       sceneRef.current = scene;
       readyFrame = window.requestAnimationFrame(() => {
@@ -246,15 +257,15 @@ function VoxelCanvas({
         scene?.dispose();
       };
     }
-  }, [volume, panels, onActiveSurfaceChange]);
+  }, [sceneInput]);
 
   useEffect(() => {
     sceneRef.current?.setProjectedVolume(projectedVolume);
-  }, [projectedVolume]);
+  }, [sceneInput, projectedVolume]);
 
   useEffect(() => {
     sceneRef.current?.setInspectionMarkers({ ambiguityMarkers, conflictMarkers });
-  }, [ambiguityMarkers, conflictMarkers]);
+  }, [sceneInput, ambiguityMarkers, conflictMarkers]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -263,20 +274,16 @@ function VoxelCanvas({
       return;
     }
 
-    if (typeof scene.setDisplayOptions === "function") {
-      scene.setDisplayOptions({
-        showAmbiguityMarkers,
-        showConflictMarkers,
-        showOutlines,
-        showPanels,
-        showProjected,
-        showVoxels,
-        visiblePanels,
-      });
-    } else {
-      scene.setVisibility({ showPanels, showVoxels });
-    }
-  }, [showAmbiguityMarkers, showConflictMarkers, showOutlines, showPanels, showProjected, showVoxels, visiblePanels]);
+    scene.setDisplayOptions({
+      showAmbiguityMarkers,
+      showConflictMarkers,
+      showOutlines,
+      showPanels,
+      showProjected,
+      showVoxels,
+      visiblePanels,
+    });
+  }, [sceneInput, showAmbiguityMarkers, showConflictMarkers, showOutlines, showPanels, showProjected, showVoxels, visiblePanels]);
 
   const setPanelVisible = (surface: SurfaceView) => {
     onVisiblePanelsChange((current) => ({ ...current, [surface]: !current[surface] }));

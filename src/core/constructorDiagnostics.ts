@@ -5,6 +5,8 @@ import type {
   SemanticPlaneSlot,
 } from "@/core/panelContracts";
 import type { SixSurfaceTemplatePresetSize } from "@/schemas/template";
+import type { ProjectionMarker } from "@/core/projection";
+import type { ValidationReport } from "@/validation/voxelValidation";
 
 export type ConstructorDiagnosticStatus =
   | "ready"
@@ -76,6 +78,14 @@ type PanelReadinessReportInput = Readonly<{
   projectRevisionId?: string;
 }>;
 
+type ConstructorDiagnosticReportInput = Readonly<{
+  preset: SixSurfaceTemplatePresetSize;
+  validationReport: ValidationReport;
+  conflictMarkers?: readonly ProjectionMarker[];
+  ambiguityMarkers?: readonly ProjectionMarker[];
+  projectRevisionId?: string;
+}>;
+
 export function createPanelReadinessDiagnosticReport({
   readiness,
   projectRevisionId,
@@ -90,6 +100,64 @@ export function createPanelReadinessDiagnosticReport({
     runContext: {
       source: "panel-readiness",
       preset: readiness.status === "ready" ? readiness.activatedPanelSet.preset : firstAcceptedPreset(readiness),
+      schemaVersion: "constructor-diagnostics-v1",
+      projectRevisionId,
+    },
+  };
+}
+
+export function createConstructorDiagnosticReport({
+  preset,
+  validationReport,
+  conflictMarkers = [],
+  ambiguityMarkers = [],
+  projectRevisionId,
+}: ConstructorDiagnosticReportInput): ConstructorDiagnosticReport {
+  const findings = [
+    ...validationFindings(validationReport),
+    ...(conflictMarkers.length > 0
+      ? [
+          constructorFinding({
+            id: "constructor-color-conflicts",
+            family: "conflict",
+            severity: "error",
+            code: "surfaceColorConflict",
+            message: `${conflictMarkers.length} projected surface color conflict markers require review.`,
+            sourceOwner: "candidateResolver",
+            actual: `${conflictMarkers.length}`,
+          }),
+        ]
+      : []),
+    ...(ambiguityMarkers.length > 0
+      ? [
+          constructorFinding({
+            id: "constructor-ambiguity-markers",
+            family: "ambiguity",
+            severity: "warning",
+            code: "underSpecifiedCandidate",
+            message: `${ambiguityMarkers.length} candidate positions are under-specified by the active panels.`,
+            sourceOwner: "candidateResolver",
+            actual: `${ambiguityMarkers.length}`,
+          }),
+        ]
+      : []),
+  ];
+  const status = conflictMarkers.length > 0
+    ? "conflicted"
+    : ambiguityMarkers.length > 0
+      ? "ambiguous"
+      : validationReport.status === "valid"
+        ? "usable"
+        : "failed";
+
+  return {
+    status,
+    stale: false,
+    findings,
+    counts: countFindings(findings),
+    runContext: {
+      source: "constructor",
+      preset,
       schemaVersion: "constructor-diagnostics-v1",
       projectRevisionId,
     },
@@ -126,6 +194,81 @@ function panelReadinessFinding(
     slots: isReportSlot(diagnostic.slot) ? [diagnostic.slot] : [],
     expected: diagnostic.expected,
     actual: diagnostic.actual,
+  };
+}
+
+function validationFindings(report: ValidationReport): ConstructorDiagnosticFinding[] {
+  const findings: ConstructorDiagnosticFinding[] = [];
+
+  if (!report.geometry.connected) {
+    findings.push(constructorFinding({
+      id: "constructor-disconnected-volume",
+      family: "topology",
+      severity: "error",
+      code: "disconnectedVolume",
+      message: "The constructed voxel candidate is disconnected.",
+      sourceOwner: "modelConstruction",
+    }));
+  }
+
+  if (!report.geometry.watertight) {
+    findings.push(constructorFinding({
+      id: "constructor-enclosed-voids",
+      family: "topology",
+      severity: "error",
+      code: "enclosedVoids",
+      message: "The constructed voxel candidate contains enclosed voids.",
+      sourceOwner: "modelConstruction",
+    }));
+  }
+
+  if (report.geometry.unsupportedFloatingVoxels.length > 0) {
+    findings.push(constructorFinding({
+      id: "constructor-unsupported-floating-voxels",
+      family: "topology",
+      severity: "error",
+      code: "unsupportedFloatingVoxels",
+      message: `${report.geometry.unsupportedFloatingVoxels.length} unsupported floating voxels were found.`,
+      sourceOwner: "modelConstruction",
+      actual: `${report.geometry.unsupportedFloatingVoxels.length}`,
+    }));
+  }
+
+  if (report.geometry.silhouetteMismatches.length > 0) {
+    findings.push(constructorFinding({
+      id: "constructor-silhouette-mismatches",
+      family: "occupancy",
+      severity: "error",
+      code: "silhouetteMismatch",
+      message: `${report.geometry.silhouetteMismatches.length} source-panel silhouette mismatches were found.`,
+      sourceOwner: "modelConstruction",
+      actual: `${report.geometry.silhouetteMismatches.length}`,
+    }));
+  }
+
+  if (!report.color.coherent) {
+    findings.push(constructorFinding({
+      id: "constructor-color-mismatches",
+      family: "appearance",
+      severity: "error",
+      code: "surfaceColorMismatch",
+      message: `${report.color.mismatches.length} source-panel color mismatches were found.`,
+      sourceOwner: "candidateResolver",
+      actual: `${report.color.mismatches.length}`,
+    }));
+  }
+
+  return findings;
+}
+
+function constructorFinding(
+  finding: Omit<ConstructorDiagnosticFinding, "panelAssetIds" | "assignmentIds" | "slots">,
+): ConstructorDiagnosticFinding {
+  return {
+    ...finding,
+    panelAssetIds: [],
+    assignmentIds: [],
+    slots: [],
   };
 }
 

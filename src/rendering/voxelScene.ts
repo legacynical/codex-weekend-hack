@@ -37,36 +37,39 @@ import type { GridSize, Voxel, VoxelVolume } from "@/core/voxel";
 
 export type SurfaceView = SurfaceId;
 
+export type VoxelSceneDisplayOptions = Readonly<{
+  showPanels: boolean;
+  showVoxels: boolean;
+  showOutlines: boolean;
+  showProjected?: boolean;
+  showConflictMarkers?: boolean;
+  showAmbiguityMarkers?: boolean;
+  visiblePanels?: Partial<Record<SurfaceId, boolean>>;
+}>;
+
 export type VoxelSceneInput = Readonly<{
   volume: VoxelVolume;
   panels: readonly ViewPanel[];
   initialView?: SurfaceView;
   projectedVolume?: VoxelVolume;
-  showPanels?: boolean;
-  showVoxels?: boolean;
-  showOutlines?: boolean;
-  showProjected?: boolean;
-  showConflictMarkers?: boolean;
-  showAmbiguityMarkers?: boolean;
-  visiblePanels?: Partial<Record<SurfaceId, boolean>>;
   conflictMarkers?: readonly ProjectionMarker[];
   ambiguityMarkers?: readonly ProjectionMarker[];
   onSurfaceChange?: (surface: SurfaceView) => void;
-}>;
+}> & Partial<VoxelSceneDisplayOptions>;
 
 const sceneBackground = new Color("#172022");
 const cubeMatrix = new Matrix4();
 const cubeGeometry = new BoxGeometry(1, 1, 1);
 
 export class VoxelScene {
-  private readonly renderer: WebGLRenderer;
+  private renderer!: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly gizmoScene = new Scene();
-  private readonly camera: PerspectiveCamera;
+  private camera!: PerspectiveCamera;
   private readonly gizmoCamera = new OrthographicCamera(-1.8, 1.8, 1.8, -1.8, 0.1, 10);
   private readonly gizmoRoot = new Group();
   private readonly raycaster = new Raycaster();
-  private readonly controls: OrbitControls;
+  private controls!: OrbitControls;
   private readonly root = new Group();
   private readonly voxelRoot = new Group();
   private readonly projectedRoot = new Group();
@@ -75,7 +78,19 @@ export class VoxelScene {
   private readonly panelRoot = new Group();
   private readonly conflictMarkerRoot = new Group();
   private readonly ambiguityMarkerRoot = new Group();
-  private readonly resizeObserver: ResizeObserver;
+  private resizeObserver: ResizeObserver | null = null;
+  private baseVolume: VoxelVolume;
+  private projectedVolume: VoxelVolume | undefined;
+  private renderedOutline:
+    | {
+        mode: "base" | "projected";
+        volume: VoxelVolume;
+        segmentCount: number;
+      }
+    | null = null;
+  private showOutlines = false;
+  private showProjected = false;
+  private showVoxels = true;
   private sceneSize: GridSize;
   private activeGizmoDrag:
     | {
@@ -107,6 +122,7 @@ export class VoxelScene {
       }
     | null = null;
   private frameId: number | null = null;
+  private renderInvalidated = false;
   private disposed = false;
   private onSurfaceChange?: (surface: SurfaceView) => void;
 
@@ -115,68 +131,64 @@ export class VoxelScene {
     input: VoxelSceneInput,
   ) {
     this.sceneSize = input.volume.size;
-    this.renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
-    this.renderer.setClearColor(sceneBackground, 1);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.domElement.dataset.testid = "voxel-viewer-canvas";
-    this.renderer.domElement.setAttribute("aria-label", "Swirl sphere 3D viewer");
-    this.renderer.domElement.style.display = "block";
-    this.renderer.domElement.style.touchAction = "none";
-    this.renderer.domElement.style.userSelect = "none";
-    this.renderer.domElement.style.width = "100%";
-    this.renderer.domElement.style.height = "100%";
-    this.renderer.domElement.addEventListener("pointerdown", this.handleGizmoPointerDown, true);
-    this.renderer.domElement.addEventListener("pointerdown", this.handleScenePointerDown, true);
-    this.renderer.domElement.addEventListener("pointermove", this.handleGizmoPointerMove, true);
-    this.renderer.domElement.addEventListener("pointermove", this.handleScenePointerMove, true);
-    this.renderer.domElement.addEventListener("pointerup", this.handleGizmoPointerUp, true);
-    this.renderer.domElement.addEventListener("pointerup", this.handleScenePointerUp, true);
-    this.renderer.domElement.addEventListener("pointercancel", this.handleGizmoPointerUp, true);
-    this.renderer.domElement.addEventListener("pointercancel", this.handleScenePointerUp, true);
-    this.renderer.domElement.addEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
-    this.renderer.domElement.addEventListener("lostpointercapture", this.handleScenePointerUp, true);
-    window.addEventListener("pointerup", this.handleGizmoPointerUp, true);
-    window.addEventListener("pointerup", this.handleScenePointerUp, true);
-    window.addEventListener("mouseup", this.handleMouseReleaseFallback, true);
-    this.host.append(this.renderer.domElement);
+    this.baseVolume = input.volume;
+    this.projectedVolume = input.projectedVolume;
 
-    this.camera = new PerspectiveCamera(45, 1, 0.1, 1000);
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
-    this.controls.target.copy(centerOf());
-    this.controls.addEventListener("change", () => {
-      const currentCount = Number(this.renderer.domElement.dataset.orbitEvents ?? "0");
-      this.renderer.domElement.dataset.orbitEvents = String(currentCount + 1);
-    });
+    try {
+      this.renderer = new WebGLRenderer({ antialias: true, alpha: false });
+      this.renderer.setClearColor(sceneBackground, 1);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.renderer.domElement.dataset.testid = "voxel-viewer-canvas";
+      this.renderer.domElement.dataset.renderCount = "0";
+      this.renderer.domElement.setAttribute("aria-label", "Swirl sphere 3D viewer");
+      this.renderer.domElement.style.display = "block";
+      this.renderer.domElement.style.touchAction = "none";
+      this.renderer.domElement.style.userSelect = "none";
+      this.renderer.domElement.style.width = "100%";
+      this.renderer.domElement.style.height = "100%";
 
-    this.scene.background = sceneBackground;
-    this.scene.add(new AmbientLight("#ffffff", 2.2));
-    const keyLight = new DirectionalLight("#ffffff", 2.6);
-    keyLight.position.set(24, 36, 42);
-    this.scene.add(keyLight);
-    this.root.add(
-      this.voxelRoot,
-      this.projectedRoot,
-      this.outlineRoot,
-      this.projectedOutlineRoot,
-      this.panelRoot,
-      this.conflictMarkerRoot,
-      this.ambiguityMarkerRoot,
-    );
-    this.scene.add(this.root);
-    this.setupGizmo();
+      this.camera = new PerspectiveCamera(45, 1, 0.1, 1000);
+      this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+      this.controls.enableDamping = true;
+      this.controls.dampingFactor = 0.08;
+      this.controls.target.copy(centerOf());
+      this.controls.addEventListener("change", this.handleControlsChange);
 
-    this.setInput(input);
-    this.setView(input.initialView ?? "front", { animate: false });
-    this.resize();
-    this.resizeObserver = new ResizeObserver(() => this.resize());
-    this.resizeObserver.observe(this.host);
-    this.animate();
+      this.scene.background = sceneBackground;
+      this.scene.add(new AmbientLight("#ffffff", 2.2));
+      const keyLight = new DirectionalLight("#ffffff", 2.6);
+      keyLight.position.set(24, 36, 42);
+      this.scene.add(keyLight);
+      this.root.add(
+        this.voxelRoot,
+        this.projectedRoot,
+        this.outlineRoot,
+        this.projectedOutlineRoot,
+        this.panelRoot,
+        this.conflictMarkerRoot,
+        this.ambiguityMarkerRoot,
+      );
+      this.scene.add(this.root);
+      this.setupGizmo();
+
+      this.setInput(input);
+      this.setView(input.initialView ?? "front", { animate: false });
+      this.attachInteractionListeners();
+      this.host.append(this.renderer.domElement);
+      this.resize();
+      this.resizeObserver = new ResizeObserver(() => this.resize());
+      this.resizeObserver.observe(this.host);
+      this.invalidate();
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
   }
 
   setInput(input: VoxelSceneInput): void {
     this.sceneSize = input.volume.size;
+    this.baseVolume = input.volume;
+    this.projectedVolume = input.projectedVolume;
     this.onSurfaceChange = input.onSurfaceChange;
     this.clearGroup(this.voxelRoot);
     this.clearGroup(this.projectedRoot);
@@ -186,11 +198,10 @@ export class VoxelScene {
     this.clearGroup(this.conflictMarkerRoot);
     this.clearGroup(this.ambiguityMarkerRoot);
     this.voxelRoot.add(createVoxelMeshes(input.volume));
-    if (input.projectedVolume) {
-      this.projectedRoot.add(createVoxelMeshes(input.projectedVolume));
-      this.projectedOutlineRoot.add(createVoxelOutlines(input.projectedVolume));
+    this.renderedOutline = null;
+    if (this.projectedVolume) {
+      this.projectedRoot.add(createVoxelMeshes(this.projectedVolume));
     }
-    this.outlineRoot.add(createVoxelOutlines(input.volume));
     this.panelRoot.add(createPanelMeshes(this.sceneSize, input.panels));
     this.setInspectionMarkers({
       ambiguityMarkers: input.ambiguityMarkers ?? [],
@@ -208,11 +219,15 @@ export class VoxelScene {
   }
 
   setProjectedVolume(volume: VoxelVolume): void {
+    this.projectedVolume = volume;
     this.clearGroup(this.projectedRoot);
-    this.clearGroup(this.projectedOutlineRoot);
     this.projectedRoot.add(createVoxelMeshes(volume));
-    this.projectedOutlineRoot.add(createVoxelOutlines(volume));
-    this.render();
+    if (this.renderedOutline?.mode === "projected") {
+      this.clearOutlines();
+    }
+    this.syncOutlines();
+    this.updateRenderEvidence();
+    this.invalidate();
   }
 
   setInspectionMarkers({
@@ -226,7 +241,7 @@ export class VoxelScene {
     this.clearGroup(this.ambiguityMarkerRoot);
     this.conflictMarkerRoot.add(createMarkerSprites(this.sceneSize, conflictMarkers));
     this.ambiguityMarkerRoot.add(createMarkerSprites(this.sceneSize, ambiguityMarkers));
-    this.render();
+    this.invalidate();
   }
 
   setDisplayOptions({
@@ -237,33 +252,18 @@ export class VoxelScene {
     showConflictMarkers,
     showAmbiguityMarkers,
     visiblePanels,
-  }: {
-    showAmbiguityMarkers?: boolean;
-    showConflictMarkers?: boolean;
-    showOutlines: boolean;
-    showPanels: boolean;
-    showProjected?: boolean;
-    showVoxels: boolean;
-    visiblePanels?: Partial<Record<SurfaceId, boolean>>;
-  }): void {
+  }: VoxelSceneDisplayOptions): void {
     this.setPanelVisibility(showPanels, visiblePanels);
-    this.projectedRoot.visible = showVoxels && (showProjected ?? false);
-    this.voxelRoot.visible = showVoxels && !(showProjected ?? false);
-    this.outlineRoot.visible = showVoxels && showOutlines && !(showProjected ?? false);
-    this.projectedOutlineRoot.visible = showVoxels && showOutlines && (showProjected ?? false);
-    this.conflictMarkerRoot.visible = (showConflictMarkers ?? true) && (showProjected ?? false);
-    this.ambiguityMarkerRoot.visible = (showAmbiguityMarkers ?? true) && (showProjected ?? false);
-    this.render();
-  }
-
-  setVisibility({
-    showPanels,
-    showVoxels,
-  }: {
-    showPanels: boolean;
-    showVoxels: boolean;
-  }): void {
-    this.setDisplayOptions({ showOutlines: false, showPanels, showVoxels });
+    this.showOutlines = showOutlines;
+    this.showProjected = showProjected ?? false;
+    this.showVoxels = showVoxels;
+    this.projectedRoot.visible = this.showVoxels && this.showProjected;
+    this.voxelRoot.visible = this.showVoxels && !this.showProjected;
+    this.conflictMarkerRoot.visible = (showConflictMarkers ?? true) && this.showProjected;
+    this.ambiguityMarkerRoot.visible = (showAmbiguityMarkers ?? true) && this.showProjected;
+    this.syncOutlines();
+    this.updateRenderEvidence();
+    this.invalidate();
   }
 
   setView(view: SurfaceView, { animate = true }: { animate?: boolean } = {}): void {
@@ -280,6 +280,7 @@ export class VoxelScene {
         toUp: next.up,
         target: center,
       };
+      this.invalidate();
       return;
     }
 
@@ -288,7 +289,7 @@ export class VoxelScene {
     this.camera.up.copy(next.up);
     this.camera.lookAt(center);
     this.controls.update();
-    this.render();
+    this.invalidate();
   }
 
   dispose(): void {
@@ -299,46 +300,62 @@ export class VoxelScene {
     this.disposed = true;
 
     if (this.frameId !== null) {
-      cancelAnimationFrame(this.frameId);
+      const frameId = this.frameId;
       this.frameId = null;
+      attemptCleanup(() => cancelAnimationFrame(frameId));
     }
 
-    this.resizeObserver.disconnect();
-    this.controls.dispose();
-    this.clearGroup(this.voxelRoot);
-    this.clearGroup(this.projectedRoot);
-    this.clearGroup(this.outlineRoot);
-    this.clearGroup(this.projectedOutlineRoot);
-    this.clearGroup(this.panelRoot);
-    this.clearGroup(this.conflictMarkerRoot);
-    this.clearGroup(this.ambiguityMarkerRoot);
-    this.clearGroup(this.gizmoRoot);
-    this.renderer.domElement.removeEventListener("pointerdown", this.handleGizmoPointerDown, true);
-    this.renderer.domElement.removeEventListener("pointerdown", this.handleScenePointerDown, true);
-    this.renderer.domElement.removeEventListener("pointermove", this.handleGizmoPointerMove, true);
-    this.renderer.domElement.removeEventListener("pointermove", this.handleScenePointerMove, true);
-    this.renderer.domElement.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
-    this.renderer.domElement.removeEventListener("pointerup", this.handleScenePointerUp, true);
-    this.renderer.domElement.removeEventListener("pointercancel", this.handleGizmoPointerUp, true);
-    this.renderer.domElement.removeEventListener("pointercancel", this.handleScenePointerUp, true);
-    this.renderer.domElement.removeEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
-    this.renderer.domElement.removeEventListener("lostpointercapture", this.handleScenePointerUp, true);
-    window.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
-    window.removeEventListener("pointerup", this.handleScenePointerUp, true);
-    window.removeEventListener("mouseup", this.handleMouseReleaseFallback, true);
-    this.renderer.dispose();
-    this.renderer.domElement.remove();
+    this.renderInvalidated = false;
+    const resizeObserver = this.resizeObserver;
+    this.resizeObserver = null;
+    attemptCleanup(() => resizeObserver?.disconnect());
+    attemptCleanup(() => this.controls?.removeEventListener("change", this.handleControlsChange));
+    attemptCleanup(() => this.controls?.dispose());
+    for (const group of [
+      this.voxelRoot,
+      this.projectedRoot,
+      this.outlineRoot,
+      this.projectedOutlineRoot,
+      this.panelRoot,
+      this.conflictMarkerRoot,
+      this.ambiguityMarkerRoot,
+      this.gizmoRoot,
+    ]) {
+      attemptCleanup(() => this.clearGroup(group));
+    }
+    attemptCleanup(() => this.detachInteractionListeners());
+    attemptCleanup(() => this.renderer?.dispose());
+    attemptCleanup(() => this.renderer?.domElement.remove());
   }
 
-  private animate = (): void => {
+  private invalidate(): void {
     if (this.disposed) {
       return;
     }
 
+    this.renderInvalidated = true;
+    if (this.frameId === null) {
+      this.frameId = requestAnimationFrame(this.renderFrame);
+    }
+  }
+
+  private renderFrame = (): void => {
+    if (this.disposed) {
+      return;
+    }
+
+    this.renderInvalidated = false;
     this.updateCameraAnimation();
-    this.controls.update();
+    const controlsChanged = this.controls.update();
     this.render();
-    this.frameId = requestAnimationFrame(this.animate);
+    const shouldContinue =
+      this.renderInvalidated ||
+      controlsChanged ||
+      this.animation !== null ||
+      this.activeGizmoDrag !== null ||
+      this.activeSceneDrag !== null;
+
+    this.frameId = shouldContinue ? requestAnimationFrame(this.renderFrame) : null;
   };
 
   private resize(): void {
@@ -347,7 +364,7 @@ export class VoxelScene {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.render();
+    this.invalidate();
   }
 
   private render(): void {
@@ -359,8 +376,87 @@ export class VoxelScene {
     this.renderer.domElement.dataset.cameraPosition = vectorDatasetValue(this.camera.position);
     this.renderer.domElement.dataset.cameraUp = vectorDatasetValue(this.camera.up);
     this.renderer.domElement.dataset.controlsEnabled = String(this.controls.enabled);
+    const currentRenderCount = Number(this.renderer.domElement.dataset.renderCount ?? "0");
+    this.renderer.domElement.dataset.renderCount = String(currentRenderCount + 1);
     this.renderer.render(this.scene, this.camera);
     this.renderGizmo(width, height);
+  }
+
+  private attachInteractionListeners(): void {
+    this.renderer.domElement.addEventListener("pointerdown", this.handleGizmoPointerDown, true);
+    this.renderer.domElement.addEventListener("pointerdown", this.handleScenePointerDown, true);
+    this.renderer.domElement.addEventListener("pointermove", this.handleGizmoPointerMove, true);
+    this.renderer.domElement.addEventListener("pointermove", this.handleScenePointerMove, true);
+    this.renderer.domElement.addEventListener("pointerup", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.addEventListener("pointerup", this.handleScenePointerUp, true);
+    this.renderer.domElement.addEventListener("pointercancel", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.addEventListener("pointercancel", this.handleScenePointerUp, true);
+    this.renderer.domElement.addEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
+    this.renderer.domElement.addEventListener("lostpointercapture", this.handleScenePointerUp, true);
+    window.addEventListener("pointerup", this.handleGizmoPointerUp, true);
+    window.addEventListener("pointerup", this.handleScenePointerUp, true);
+    window.addEventListener("mouseup", this.handleMouseReleaseFallback, true);
+  }
+
+  private detachInteractionListeners(): void {
+    const canvas = this.renderer?.domElement;
+    canvas?.removeEventListener("pointerdown", this.handleGizmoPointerDown, true);
+    canvas?.removeEventListener("pointerdown", this.handleScenePointerDown, true);
+    canvas?.removeEventListener("pointermove", this.handleGizmoPointerMove, true);
+    canvas?.removeEventListener("pointermove", this.handleScenePointerMove, true);
+    canvas?.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
+    canvas?.removeEventListener("pointerup", this.handleScenePointerUp, true);
+    canvas?.removeEventListener("pointercancel", this.handleGizmoPointerUp, true);
+    canvas?.removeEventListener("pointercancel", this.handleScenePointerUp, true);
+    canvas?.removeEventListener("lostpointercapture", this.handleGizmoPointerUp, true);
+    canvas?.removeEventListener("lostpointercapture", this.handleScenePointerUp, true);
+    window.removeEventListener("pointerup", this.handleGizmoPointerUp, true);
+    window.removeEventListener("pointerup", this.handleScenePointerUp, true);
+    window.removeEventListener("mouseup", this.handleMouseReleaseFallback, true);
+  }
+
+  private handleControlsChange = (): void => {
+    const currentCount = Number(this.renderer.domElement.dataset.orbitEvents ?? "0");
+    this.renderer.domElement.dataset.orbitEvents = String(currentCount + 1);
+    this.invalidate();
+  };
+
+  private syncOutlines(): void {
+    const mode = this.showProjected ? "projected" : "base";
+    const volume = mode === "projected" ? this.projectedVolume : this.baseVolume;
+    const shouldRender = this.showVoxels && this.showOutlines && volume !== undefined;
+
+    if (!shouldRender) {
+      this.clearOutlines();
+      return;
+    }
+
+    if (this.renderedOutline?.mode === mode && this.renderedOutline.volume === volume) {
+      return;
+    }
+
+    this.clearOutlines();
+    const outline = createVoxelOutlines(volume);
+    const root = mode === "projected" ? this.projectedOutlineRoot : this.outlineRoot;
+    root.add(outline.lines);
+    root.visible = true;
+    this.renderedOutline = { mode, segmentCount: outline.segmentCount, volume };
+  }
+
+  private clearOutlines(): void {
+    this.clearGroup(this.outlineRoot);
+    this.clearGroup(this.projectedOutlineRoot);
+    this.outlineRoot.visible = false;
+    this.projectedOutlineRoot.visible = false;
+    this.renderedOutline = null;
+  }
+
+  private updateRenderEvidence(): void {
+    const activeVolume = this.showProjected ? this.projectedVolume : this.baseVolume;
+    const mode = this.showVoxels ? (this.showProjected ? "projected" : "base") : "hidden";
+    this.renderer.domElement.dataset.voxelMode = mode;
+    this.renderer.domElement.dataset.visibleVoxelCount = String(this.showVoxels ? (activeVolume?.voxels.length ?? 0) : 0);
+    this.renderer.domElement.dataset.outlineSegmentCount = String(this.renderedOutline?.segmentCount ?? 0);
   }
 
   private clearGroup(group: Group): void {
@@ -432,6 +528,7 @@ export class VoxelScene {
       startY: event.clientY,
     };
     this.capturePointer(event.pointerId);
+    this.invalidate();
   };
 
   private handleGizmoPointerMove = (event: PointerEvent): void => {
@@ -458,6 +555,7 @@ export class VoxelScene {
       const currentCenterCount = Number(this.renderer.domElement.dataset.gizmoCenterDrags ?? "0");
       this.renderer.domElement.dataset.gizmoCenterDrags = String(currentCenterCount + 1);
     }
+    this.invalidate();
   };
 
   private handleGizmoPointerUp = (event: PointerEvent): void => {
@@ -474,6 +572,7 @@ export class VoxelScene {
       this.setView(nextSurface);
       this.onSurfaceChange?.(nextSurface);
     }
+    this.invalidate();
   };
 
   private finishGizmoDrag(pointerId?: number): void {
@@ -500,6 +599,7 @@ export class VoxelScene {
       previousY: event.clientY,
     };
     this.capturePointer(event.pointerId);
+    this.invalidate();
   };
 
   private handleScenePointerMove = (event: PointerEvent): void => {
@@ -516,6 +616,7 @@ export class VoxelScene {
     this.orbitCameraFromDrag(deltaX, deltaY);
     const currentCount = Number(this.renderer.domElement.dataset.orbitEvents ?? "0");
     this.renderer.domElement.dataset.orbitEvents = String(currentCount + 1);
+    this.invalidate();
   };
 
   private handleScenePointerUp = (event: PointerEvent): void => {
@@ -526,6 +627,7 @@ export class VoxelScene {
     event.preventDefault();
     event.stopPropagation();
     this.finishSceneDrag(event.pointerId);
+    this.invalidate();
   };
 
   private finishSceneDrag(pointerId?: number): void {
@@ -573,7 +675,7 @@ export class VoxelScene {
     this.camera.position.copy(target).add(offset);
     this.camera.lookAt(target);
     this.controls.update();
-    this.render();
+    this.invalidate();
   }
 
   private isInGizmoViewport(event: PointerEvent): boolean {
@@ -684,12 +786,20 @@ function createVoxelMesh(size: GridSize, voxels: readonly Voxel[], color: string
   return mesh;
 }
 
-function createVoxelOutlines(volume: VoxelVolume): LineSegments {
+function createVoxelOutlines(volume: VoxelVolume): { lines: LineSegments; segmentCount: number } {
   const positions: number[] = [];
   const offset = centerOffset(volume.size);
+  const edges = collectVoxelEdges(volume);
 
-  for (const voxel of volume.voxels) {
-    appendCubeEdges(positions, voxel.x - offset.x, voxel.y - offset.y, voxel.z - offset.z);
+  for (const [start, end] of edges.values()) {
+    positions.push(
+      start[0] / 2 - offset.x,
+      start[1] / 2 - offset.y,
+      start[2] / 2 - offset.z,
+      end[0] / 2 - offset.x,
+      end[1] / 2 - offset.y,
+      end[2] / 2 - offset.z,
+    );
   }
 
   const geometry = new BufferGeometry();
@@ -700,7 +810,11 @@ function createVoxelOutlines(volume: VoxelVolume): LineSegments {
     opacity: 0.55,
   });
 
-  return new LineSegments(geometry, material);
+  return { lines: new LineSegments(geometry, material), segmentCount: edges.size };
+}
+
+export function getVoxelOutlineSegmentCount(volume: VoxelVolume): number {
+  return collectVoxelEdges(volume).size;
 }
 
 function createMarkerSprites(size: GridSize, markers: readonly ProjectionMarker[]): Group {
@@ -751,29 +865,43 @@ function createVoxelMarker(label: ProjectionMarker["label"], color: string): Spr
   return sprite;
 }
 
-function appendCubeEdges(positions: number[], centerX: number, centerY: number, centerZ: number): void {
-  const minX = centerX - 0.5;
-  const maxX = centerX + 0.5;
-  const minY = centerY - 0.5;
-  const maxY = centerY + 0.5;
-  const minZ = centerZ - 0.5;
-  const maxZ = centerZ + 0.5;
-  const edges = [
-    [minX, minY, minZ, maxX, minY, minZ],
-    [maxX, minY, minZ, maxX, maxY, minZ],
-    [maxX, maxY, minZ, minX, maxY, minZ],
-    [minX, maxY, minZ, minX, minY, minZ],
-    [minX, minY, maxZ, maxX, minY, maxZ],
-    [maxX, minY, maxZ, maxX, maxY, maxZ],
-    [maxX, maxY, maxZ, minX, maxY, maxZ],
-    [minX, maxY, maxZ, minX, minY, maxZ],
-    [minX, minY, minZ, minX, minY, maxZ],
-    [maxX, minY, minZ, maxX, minY, maxZ],
-    [maxX, maxY, minZ, maxX, maxY, maxZ],
-    [minX, maxY, minZ, minX, maxY, maxZ],
-  ];
+type LatticePoint = readonly [number, number, number];
+type LatticeEdge = readonly [LatticePoint, LatticePoint];
 
-  edges.forEach((edge) => positions.push(...edge));
+function collectVoxelEdges(volume: VoxelVolume): Map<string, LatticeEdge> {
+  const edges = new Map<string, LatticeEdge>();
+
+  for (const voxel of volume.voxels) {
+    const minX = voxel.x * 2 - 1;
+    const maxX = voxel.x * 2 + 1;
+    const minY = voxel.y * 2 - 1;
+    const maxY = voxel.y * 2 + 1;
+    const minZ = voxel.z * 2 - 1;
+    const maxZ = voxel.z * 2 + 1;
+    const cubeEdges: LatticeEdge[] = [
+      [[minX, minY, minZ], [maxX, minY, minZ]],
+      [[maxX, minY, minZ], [maxX, maxY, minZ]],
+      [[maxX, maxY, minZ], [minX, maxY, minZ]],
+      [[minX, maxY, minZ], [minX, minY, minZ]],
+      [[minX, minY, maxZ], [maxX, minY, maxZ]],
+      [[maxX, minY, maxZ], [maxX, maxY, maxZ]],
+      [[maxX, maxY, maxZ], [minX, maxY, maxZ]],
+      [[minX, maxY, maxZ], [minX, minY, maxZ]],
+      [[minX, minY, minZ], [minX, minY, maxZ]],
+      [[maxX, minY, minZ], [maxX, minY, maxZ]],
+      [[maxX, maxY, minZ], [maxX, maxY, maxZ]],
+      [[minX, maxY, minZ], [minX, maxY, maxZ]],
+    ];
+
+    for (const edge of cubeEdges) {
+      const startKey = edge[0].join(",");
+      const endKey = edge[1].join(",");
+      const key = startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`;
+      edges.set(key, edge);
+    }
+  }
+
+  return edges;
 }
 
 function createPanelMeshes(size: GridSize, panels: readonly ViewPanel[]): Group {
@@ -1165,4 +1293,12 @@ function disposeObject(object: Object3D): void {
       }
     }
   });
+}
+
+function attemptCleanup(cleanup: () => void): void {
+  try {
+    cleanup();
+  } catch {
+    // Keep teardown progressing so one failed resource cannot strand the remaining renderer resources.
+  }
 }

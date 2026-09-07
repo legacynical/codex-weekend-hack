@@ -11,6 +11,7 @@ import {
   savePanelAssetCandidate,
   summarizeActiveProject,
 } from "@/core/activeProjectState";
+import { constructActivatedPanelSet } from "@/core/activatedPanelConstruction";
 import { createPanelReadinessDiagnosticReport } from "@/core/constructorDiagnostics";
 import { semanticPlaneSlots, type PanelAsset, type SemanticPlaneSlot } from "@/core/panelContracts";
 import type { PanelAssetCandidate } from "@/assets/assetProcessing";
@@ -138,12 +139,16 @@ describe("active project state", () => {
 
   it("marks constructor output stale after assignment changes", () => {
     const readyProject = makeReadyProject();
+    const construction = constructionFor(readyProject);
     const attached = attachConstructorOutput(readyProject, {
-      status: "succeeded",
-      diagnosticReport: createPanelReadinessDiagnosticReport({
-        readiness: readyProject.readiness,
-        projectRevisionId: "rev-ready",
-      }),
+      ...construction,
+      diagnosticReport: {
+        ...construction.diagnosticReport,
+        runContext: {
+          ...construction.diagnosticReport.runContext,
+          projectRevisionId: "rev-ready",
+        },
+      },
     });
     const cleared = clearPanelAssignment(attached, "bottom");
 
@@ -169,10 +174,11 @@ describe("active project state", () => {
 
   it("does not attach constructor output while readiness is blocked", () => {
     const project = createActiveProject({ id: "project-1" });
+    const construction = constructionFor(makeReadyProject());
 
     expect(() =>
       attachConstructorOutput(project, {
-        status: "succeeded",
+        ...construction,
         diagnosticReport: createPanelReadinessDiagnosticReport({
           readiness: project.readiness,
         }),
@@ -193,6 +199,14 @@ function makeReadyProject() {
       slot,
     });
   }, createActiveProject({ id: "project-1", name: "Test project" }));
+}
+
+function constructionFor(project: ReturnType<typeof makeReadyProject>) {
+  if (project.readiness.status !== "ready") {
+    throw new Error("Expected a constructor-ready test project");
+  }
+
+  return constructActivatedPanelSet(project.readiness.activatedPanelSet);
 }
 
 function makePanelAsset(slot: SemanticPlaneSlot | "front-replacement", preset: SixSurfaceTemplatePresetSize = 16): PanelAsset {

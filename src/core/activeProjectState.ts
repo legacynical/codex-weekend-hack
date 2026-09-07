@@ -12,13 +12,26 @@ import {
   type ConstructorDiagnosticReport,
 } from "@/core/constructorDiagnostics";
 import type { PanelAssetCandidate } from "@/assets/assetProcessing";
+import type { ViewPanel } from "@/core/panels";
+import type { ProjectionMarker } from "@/core/projection";
+import type { VoxelVolume } from "@/core/voxel";
+import type { ValidationReport } from "@/validation/voxelValidation";
 
 export type ConstructorOutputStatus = "succeeded" | "invalid" | "conflicted" | "ambiguous";
+
+export type ConstructorCandidateData = Readonly<{
+  volume: VoxelVolume;
+  panels: readonly ViewPanel[];
+  conflictMarkers: readonly ProjectionMarker[];
+  ambiguityMarkers: readonly ProjectionMarker[];
+  validationReport: ValidationReport;
+}>;
 
 export type ConstructorOutputAttachment = Readonly<{
   status: ConstructorOutputStatus;
   stale: boolean;
   activatedPanelSet: ActivatedPanelSet;
+  candidate: ConstructorCandidateData;
   diagnosticReport: ConstructorDiagnosticReport;
 }>;
 
@@ -68,6 +81,7 @@ type SavePanelAssetCandidateInput = Readonly<{
 
 type AttachConstructorOutputInput = Readonly<{
   status: ConstructorOutputStatus;
+  candidate: ConstructorCandidateData;
   diagnosticReport: ConstructorDiagnosticReport;
 }>;
 
@@ -173,6 +187,7 @@ export function attachConstructorOutput(
       status: input.status,
       stale: false,
       activatedPanelSet: project.readiness.activatedPanelSet,
+      candidate: input.candidate,
       diagnosticReport: input.diagnosticReport,
     },
   };
