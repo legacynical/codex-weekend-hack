@@ -35,12 +35,7 @@ export function createGridTemplatePngDataUrl(size: GridTemplateSize): string {
   }
 
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
   drawCellGrid(context, 0, 0, size, size, metrics.cellPixels);
-  context.strokeStyle = "#0f766e";
-  context.lineWidth = 2;
-  context.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
 
   return canvas.toDataURL("image/png");
 }
@@ -61,21 +56,17 @@ function drawCellGrid(
   rows: number,
   cellPixels: number,
 ): void {
-  context.strokeStyle = "rgba(15, 23, 42, 0.18)";
-  context.lineWidth = 1;
-  context.beginPath();
+  context.fillStyle = "#ffffff";
+  const width = columns * cellPixels;
+  const height = rows * cellPixels;
 
   for (let column = 0; column <= columns; column += 1) {
-    const lineX = x + column * cellPixels + (column === 0 || column === columns ? 0 : 0.5);
-    context.moveTo(lineX, y);
-    context.lineTo(lineX, y + rows * cellPixels);
+    const lineX = x + Math.min(column * cellPixels, width - 1);
+    context.fillRect(lineX, y, 1, height);
   }
 
   for (let row = 0; row <= rows; row += 1) {
-    const lineY = y + row * cellPixels + (row === 0 || row === rows ? 0 : 0.5);
-    context.moveTo(x, lineY);
-    context.lineTo(x + columns * cellPixels, lineY);
+    const lineY = y + Math.min(row * cellPixels, height - 1);
+    context.fillRect(x, lineY, width, 1);
   }
-
-  context.stroke();
 }

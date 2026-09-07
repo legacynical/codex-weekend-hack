@@ -1,5 +1,7 @@
 import { expect, type Locator, test } from "@playwright/test";
 
+import { createPanelPng } from "./panelPngFixture";
+
 test.setTimeout(60_000);
 
 test("renders the workbench shell", async ({ page }) => {
@@ -9,12 +11,136 @@ test("renders the workbench shell", async ({ page }) => {
   await expect(page.getByText("Swirl sphere inspection")).toBeVisible();
   await expect(page.getByText("Surface color agreement")).toBeVisible();
 
-  await page.getByRole("button", { name: "Upload Grid" }).click();
+  await page.getByRole("button", { name: "Upload face images" }).click();
   await expect(page.getByTestId("upload-slots-tab")).toBeVisible();
   await expect(page.getByLabel("front face image")).toBeAttached();
+  await expect(page.getByTestId("project-readiness")).toContainText("0 of 6 compatible panels");
+  await expect(page.getByTestId("project-diagnostics")).toContainText("Repair in: active project");
+  await expect(page.getByTestId("voxel-viewer-source")).toHaveText("benchmark fallback");
 });
 
-test("renders a nonblank voxel viewer with surface controls and gizmo navigation", async ({ page }) => {
+test("constructs project-owned viewer output from six real PNG uploads and blocks rejected replacements", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Upload face images" }).click();
+
+  const frontInput = page.getByLabel("front face image");
+  await frontInput.setInputFiles({
+    name: "invalid-front.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("not a PNG"),
+  });
+  await expect(frontInput).toHaveValue("");
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText(/could not be decoded|decode/i);
+  await expect(page.getByTestId("project-readiness")).toContainText("0 of 6 compatible panels");
+
+  const validPanel = createPanelPng({ preset: 16, occupiedCells: [[0, 0]] });
+  for (const [index, slot] of ["front", "back", "left", "right", "top", "bottom"].entries()) {
+    await page.getByLabel(`${slot} face image`).setInputFiles({
+      name: `${slot}-valid.png`,
+      mimeType: "image/png",
+      buffer: validPanel,
+    });
+    await expect(page.getByTestId(`upload-slot-status-${slot}`)).toContainText("accepted at 16 x 16");
+    await expect(page.getByTestId("project-readiness")).toContainText(`${index + 1} of 6 compatible panels`);
+  }
+
+  await expect(page.getByTestId("voxel-viewer-source")).toHaveText("project output");
+  await expect(page.getByText("Upload project candidate")).toBeVisible();
+  await expect(page.getByTestId("voxel-viewer-canvas")).toHaveAttribute("data-visible-voxel-count", "1");
+  await expect(page.getByTestId("project-readiness")).toContainText("6 saved assets");
+  await expect(page.getByTestId("project-readiness")).toContainText("6 active assignments");
+  await expect(page.getByTestId("project-diagnostics")).toContainText("Constructor diagnostics report no findings");
+
+  const canvas = page.getByTestId("voxel-viewer-canvas");
+  const beforeReplacement = await canvas.screenshot({ animations: "disabled" });
+  await frontInput.setInputFiles({
+    name: "front-red-replacement.png",
+    mimeType: "image/png",
+    buffer: createPanelPng({ preset: 16, occupiedCells: [[0, 0]], color: "#ff0000" }),
+  });
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("front-red-replacement.png accepted");
+  await expect(page.getByTestId("project-diagnostics")).toContainText("source-panel color mismatches");
+  await expect(page.getByTestId("project-readiness")).toContainText("invalid");
+  await expect
+    .poll(async () => Buffer.compare(beforeReplacement, await canvas.screenshot({ animations: "disabled" })))
+    .not.toBe(0);
+
+  await frontInput.setInputFiles({
+    name: "front-rejected-replacement.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("still not a PNG"),
+  });
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText(/could not be decoded|decode/i);
+  await expect(page.getByTestId("project-readiness")).toContainText("5 of 6 compatible panels");
+  await expect(page.getByTestId("project-readiness")).toContainText("6 saved assets");
+  await expect(page.getByTestId("project-readiness")).toContainText("5 active assignments");
+  await expect(page.getByTestId("voxel-viewer-source")).toHaveText("benchmark fallback");
+  await expect(page.getByText("Swirl sphere inspection")).toBeVisible();
+});
+
+test("ignores stale decodes after resolution changes and rapid same-slot replacements", async ({ page }) => {
+  await page.addInitScript(() => {
+    const originalCreateImageBitmap = globalThis.createImageBitmap.bind(globalThis);
+    globalThis.createImageBitmap = (async (source: ImageBitmapSource) => {
+      if (source instanceof File && source.name.startsWith("slow-")) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      }
+
+      return originalCreateImageBitmap(source);
+    }) as typeof createImageBitmap;
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Upload face images" }).click();
+
+  const frontInput = page.getByLabel("front face image");
+  await frontInput.setInputFiles({
+    name: "slow-16.png",
+    mimeType: "image/png",
+    buffer: createPanelPng({ preset: 16, occupiedCells: [[0, 0]] }),
+  });
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("Processing slow-16.png");
+  await page.getByRole("button", { name: "32", exact: true }).click();
+  await expect(frontInput).toHaveValue("");
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("Panel grid size changed");
+  await page.waitForTimeout(750);
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("Panel grid size changed");
+  await expect(page.getByTestId("project-readiness")).toContainText("0 of 6 compatible panels");
+
+  await frontInput.setInputFiles({
+    name: "fast-32.png",
+    mimeType: "image/png",
+    buffer: createPanelPng({ preset: 32, occupiedCells: [[0, 0]], color: "#336699" }),
+  });
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("fast-32.png accepted at 32 x 32");
+
+  await frontInput.setInputFiles({
+    name: "slow-red-32.png",
+    mimeType: "image/png",
+    buffer: createPanelPng({ preset: 32, occupiedCells: [[0, 0]], color: "#ff0000" }),
+  });
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("Replacing the active panel");
+  await frontInput.setInputFiles({
+    name: "fast-blue-32.png",
+    mimeType: "image/png",
+    buffer: createPanelPng({ preset: 32, occupiedCells: [[0, 0]], color: "#0000ff" }),
+  });
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("fast-blue-32.png accepted at 32 x 32");
+  await page.waitForTimeout(750);
+  await expect(page.getByTestId("upload-slot-status-front")).toContainText("fast-blue-32.png accepted at 32 x 32");
+  await expect(page.getByTestId("project-readiness")).toContainText("1 of 6 compatible panels");
+  await expect(page.getByTestId("project-readiness")).toContainText("1 saved assets");
+});
+
+test("downloads the selected template PNG", async ({ page }) => {
+  await page.goto("/");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("template-download-16").click();
+  const download = await downloadPromise;
+
+  expect(download.suggestedFilename()).toBe("pixel-grid-16.png");
+});
+
+test("renders voxel content on demand with surface controls and gizmo navigation", async ({ page }) => {
   const consoleIssues: string[] = [];
   page.on("console", (message) => {
     const text = message.text();
@@ -71,7 +197,13 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
     await expect(workspace.getByText(label, { exact: true })).toBeVisible();
   }
 
-  await expectCanvasNonblank(canvas);
+  await expectVoxelRender(canvas, "base");
+  await expectRendererIdle(canvas);
+
+  const beforeResizeRenderCount = await rendererRenderCount(canvas);
+  await page.setViewportSize({ height: 800, width: 1100 });
+  await expect.poll(async () => rendererRenderCount(canvas)).toBeGreaterThan(beforeResizeRenderCount);
+  await expectRendererIdle(canvas);
 
   const beforeDragEvents = Number((await canvas.getAttribute("data-orbit-events")) ?? "0");
   const beforeDragPosition = await canvas.getAttribute("data-camera-position");
@@ -128,7 +260,7 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
 
   await expect.poll(async () => Number((await canvas.getAttribute("data-orbit-events")) ?? "0")).toBeGreaterThan(beforeDragEvents);
   await expect.poll(async () => canvas.getAttribute("data-camera-position")).not.toBe(beforeDragPosition);
-  await expectCanvasNonblank(canvas);
+  await expectRendererIdle(canvas);
 
   const beforeGizmoDrags = Number((await canvas.getAttribute("data-gizmo-drags")) ?? "0");
   const beforeCenterGizmoDrags = Number((await canvas.getAttribute("data-gizmo-center-drags")) ?? "0");
@@ -140,14 +272,14 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
     .toBeGreaterThan(beforeCenterGizmoDrags);
   await expect.poll(async () => canvas.getAttribute("data-controls-enabled")).toBe("true");
   await expect.poll(async () => canvas.getAttribute("data-camera-position")).not.toBe(beforeCenterGizmoPosition);
-  await expectCanvasNonblank(canvas);
+  await expectRendererIdle(canvas);
 
   const beforeCenterClickPosition = await canvas.getAttribute("data-camera-position");
   await clickGizmoCenterWithMouse(canvas);
   await expect(page.getByTestId("voxel-surface-label")).toContainText(/front|back|left|right|top|bottom/);
   await expect.poll(async () => canvas.getAttribute("data-controls-enabled")).toBe("true");
   await expect.poll(async () => canvas.getAttribute("data-camera-position")).not.toBe(beforeCenterClickPosition);
-  await expectCanvasNonblank(canvas);
+  await expectRendererIdle(canvas);
 
   const panelsButton = page.getByRole("button", { name: "Panels" });
   const voxelsButton = page.getByRole("button", { name: "Voxels" });
@@ -172,35 +304,44 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
   await expect(frontPanelButton).toHaveAttribute("aria-pressed", "true");
   await frontPanelButton.click();
   await expect(frontPanelButton).toHaveAttribute("aria-pressed", "false");
-  await expectCanvasNonblank(canvas);
 
   await frontPanelButton.click();
+  await panelsButton.click();
+  await expect(panelsButton).toHaveAttribute("aria-pressed", "false");
+  const visibleVoxelsScreenshot = await canvas.screenshot({ animations: "disabled" });
+  const beforeVoxelHideRenderCount = await rendererRenderCount(canvas);
   await voxelsButton.click();
   await expect(voxelsButton).toHaveAttribute("aria-pressed", "false");
-  await expectCanvasNonblank(canvas);
+  await expect(canvas).toHaveAttribute("data-voxel-mode", "hidden");
+  await expect(canvas).toHaveAttribute("data-visible-voxel-count", "0");
+  await expect.poll(async () => rendererRenderCount(canvas)).toBeGreaterThan(beforeVoxelHideRenderCount);
+  const hiddenVoxelsScreenshot = await canvas.screenshot({ animations: "disabled" });
+  expect(Buffer.compare(visibleVoxelsScreenshot, hiddenVoxelsScreenshot)).not.toBe(0);
 
   await voxelsButton.click();
-  await expectCanvasNonblank(canvas);
+  await expectVoxelRender(canvas, "base");
+  await panelsButton.click();
+  await expect(panelsButton).toHaveAttribute("aria-pressed", "true");
   await projectedButton.click();
   await expect(projectedButton).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("projected-conflict-status")).toHaveCount(0);
-  await expectCanvasNonblank(canvas);
+  await expectVoxelRender(canvas, "projected");
   await hollowButton.click();
   await expect(hollowButton).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("projected-ambiguity-status")).toBeVisible();
-  await expectCanvasNonblank(canvas);
+  await expectVoxelRender(canvas, "projected");
   await fullHullSourceButton.click();
   await expect(fullHullSourceButton).toHaveAttribute("aria-pressed", "true");
   await expect(visibleHollowSourceButton).toHaveAttribute("aria-pressed", "false");
-  await expectCanvasNonblank(canvas);
+  await expectVoxelRender(canvas, "projected");
   await conflictMarkerButton.click();
   await ambiguityMarkerButton.click();
   await expect(conflictMarkerButton).toHaveAttribute("aria-pressed", "false");
   await expect(ambiguityMarkerButton).toHaveAttribute("aria-pressed", "false");
-  await expectCanvasNonblank(canvas);
+  await expectVoxelRender(canvas, "projected");
   await outlineButton.click();
   await expect(outlineButton).toHaveAttribute("aria-pressed", "true");
-  await expectCanvasNonblank(canvas);
+  await expect.poll(async () => Number((await canvas.getAttribute("data-outline-segment-count")) ?? "0")).toBeGreaterThan(0);
 
   await expect(page.getByTestId("voxel-surface-label")).toContainText(/front|back|left|right|top|bottom/);
   await canvas.evaluate((element) => {
@@ -285,7 +426,7 @@ test("renders a nonblank voxel viewer with surface controls and gizmo navigation
     .toBeGreaterThan(beforePostGizmoOrbitEvents);
   await expect.poll(async () => canvas.getAttribute("data-controls-enabled")).toBe("true");
   await expect.poll(async () => canvas.getAttribute("data-camera-position")).not.toBe(beforePostGizmoPosition);
-  await expectCanvasNonblank(canvas);
+  await expectRendererIdle(canvas);
   expect(consoleIssues).toEqual([]);
 });
 
@@ -295,7 +436,8 @@ test("keeps perspective view freely rotatable across repeated drags", async ({ p
   const canvas = page.getByTestId("voxel-viewer-canvas");
   await expect(canvas).toBeVisible();
   await expect(page.getByText("3D ready")).toBeVisible();
-  await expectCanvasNonblank(canvas);
+  await expectVoxelRender(canvas, "base");
+  await expectRendererIdle(canvas);
 
   const observedPositions = new Set<string>();
   let previousOrbitEvents = Number((await canvas.getAttribute("data-orbit-events")) ?? "0");
@@ -319,7 +461,7 @@ test("keeps perspective view freely rotatable across repeated drags", async ({ p
   }
 
   expect(observedPositions.size).toBeGreaterThan(8);
-  await expectCanvasNonblank(canvas);
+  await expectRendererIdle(canvas);
 });
 
 async function dragCanvasWithMouse(
@@ -467,45 +609,26 @@ async function dispatchCanvasPointerDrag(
   );
 }
 
-async function expectCanvasNonblank(canvas: Locator) {
+async function expectVoxelRender(canvas: Locator, mode: "base" | "projected") {
+  await expect(canvas).toHaveAttribute("data-voxel-mode", mode);
+  await expect.poll(async () => Number((await canvas.getAttribute("data-visible-voxel-count")) ?? "0")).toBeGreaterThan(0);
+  await expect.poll(async () => rendererRenderCount(canvas)).toBeGreaterThan(0);
+  expect((await canvas.screenshot({ animations: "disabled" })).byteLength).toBeGreaterThan(1_000);
+}
+
+async function expectRendererIdle(canvas: Locator) {
   await expect
-    .poll(async () => canvasHasNonBackgroundPixels(canvas), {
-      intervals: [250, 500, 1_000],
-      timeout: 15_000,
-    })
+    .poll(
+      async () => {
+        const before = await rendererRenderCount(canvas);
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return (await rendererRenderCount(canvas)) === before;
+      },
+      { intervals: [100, 200], timeout: 5_000 },
+    )
     .toBe(true);
 }
 
-async function canvasHasNonBackgroundPixels(canvas: Locator) {
-  return canvas.evaluate(async (element) => {
-    const canvasElement = element as HTMLCanvasElement;
-    const image = new Image();
-    image.src = canvasElement.toDataURL("image/png");
-    await image.decode();
-
-    const sample = document.createElement("canvas");
-    sample.width = image.width;
-    sample.height = image.height;
-
-    const context = sample.getContext("2d");
-
-    if (!context) {
-      return false;
-    }
-
-    context.drawImage(image, 0, 0);
-    const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
-
-    for (let index = 0; index < pixels.length; index += 4) {
-      const red = pixels[index] ?? 0;
-      const green = pixels[index + 1] ?? 0;
-      const blue = pixels[index + 2] ?? 0;
-
-      if (Math.abs(red - 23) > 12 || Math.abs(green - 32) > 12 || Math.abs(blue - 34) > 12) {
-        return true;
-      }
-    }
-
-    return false;
-  });
+async function rendererRenderCount(canvas: Locator): Promise<number> {
+  return Number((await canvas.getAttribute("data-render-count")) ?? "0");
 }

@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useReducer, useState } from "react";
 import { Box, CheckCircle2, Download, Layers3, Palette, PanelTop, Upload } from "lucide-react";
 
 import { createSwirlSphere } from "@/benchmarks/swirlSphere";
-import { VoxelViewer } from "@/components/VoxelViewer";
+import { processBrowserPanelAssetSource } from "@/assets/assetProcessing";
+import { VoxelViewer, type VoxelViewerData } from "@/components/VoxelViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,14 +15,32 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { projectVolumeToAxisPanels, reconstructVisualHull } from "@/core/projection";
+import {
+  summarizeActiveProject,
+  type ActiveProjectLifecycleStatus,
+  type ActiveProjectState,
+  type ConstructorOutputStatus,
+} from "@/core/activeProjectState";
+import {
+  createPanelReadinessDiagnosticReport,
+  type ConstructorDiagnosticSourceOwner,
+  type ConstructorDiagnosticReport,
+} from "@/core/constructorDiagnostics";
+import { semanticPlaneSlots, type SemanticPlaneSlot } from "@/core/panelContracts";
+import { projectVolumeToSurfacePanels } from "@/core/projection";
+import {
+  createUploadRequest,
+  createUploadState,
+  uploadReducer,
+  type UploadSlotState,
+} from "@/core/uploadState";
 import {
   downloadGridTemplatePng,
   getTemplateImageMetrics,
   gridTemplateSizes,
   type GridTemplateSize,
 } from "@/templates/templateImage";
-import { validateVoxelCandidate } from "@/validation/voxelValidation";
+import { validateVoxelCandidate, type ValidationReport } from "@/validation/voxelValidation";
 
 const workflow = [
   { step: "01", label: "Parse uploaded grids", icon: PanelTop },
@@ -30,40 +49,69 @@ const workflow = [
 ] as const;
 
 const benchmarkVolume = createSwirlSphere({ x: 16, y: 16, z: 16 });
-const benchmarkPanels = projectVolumeToAxisPanels(benchmarkVolume);
-const benchmarkCandidate = reconstructVisualHull(benchmarkVolume.size, benchmarkPanels);
-const benchmarkReport = validateVoxelCandidate(benchmarkCandidate, benchmarkPanels);
-
-const lanes = [
-  {
-    label: "Silhouette consistency",
-    passed: benchmarkReport.geometry.silhouetteMismatches.length === 0,
-    detail: `${benchmarkReport.geometry.silhouetteMismatches.length} silhouette mismatches`,
-  },
-  {
-    label: "Connected watertight volume",
-    passed: benchmarkReport.geometry.connected && benchmarkReport.geometry.watertight,
-    detail: benchmarkReport.geometry.connected && benchmarkReport.geometry.watertight ? "connected and watertight" : "geometry needs review",
-  },
-  {
-    label: "Surface color agreement",
-    passed: benchmarkReport.color.coherent,
-    detail: benchmarkReport.color.coherent
-      ? "surface colors match projected panels"
-      : `${benchmarkReport.color.mismatches.length} hidden-surface color conflicts from axis-only visual hull`,
-  },
-] as const;
+const benchmarkPanels = projectVolumeToSurfacePanels(benchmarkVolume);
+const benchmarkReport = validateVoxelCandidate(benchmarkVolume, benchmarkPanels);
+const benchmarkViewerData: VoxelViewerData = {
+  volume: benchmarkVolume,
+  panels: benchmarkPanels,
+  conflictMarkers: [],
+  ambiguityMarkers: [],
+  title: "Swirl sphere inspection",
+  detail: "Explicit benchmark fallback with six signed projected surfaces",
+  source: "benchmark-fallback",
+};
 
 const assetTabs = ["templates", "uploads"] as const;
 type AssetTab = (typeof assetTabs)[number];
 
-const faceSlots = ["front", "back", "left", "right", "top", "bottom"] as const;
-type FaceSlot = (typeof faceSlots)[number];
+const faceSlots = semanticPlaneSlots;
+type FaceSlot = SemanticPlaneSlot;
 
 function App() {
   const [activeAssetTab, setActiveAssetTab] = useState<AssetTab>("templates");
-  const [uploadResolution, setUploadResolution] = useState<GridTemplateSize>(16);
-  const [uploadedSlotNames, setUploadedSlotNames] = useState<Partial<Record<FaceSlot, string>>>({});
+  const [uploads, dispatchUpload] = useReducer(uploadReducer, undefined, createUploadState);
+  const { resolution: uploadResolution, slots: uploadSlots, project } = uploads;
+  const activeConstructorOutput = project.constructorOutput && !project.constructorOutput.stale
+    ? project.constructorOutput
+    : null;
+  const viewerData: VoxelViewerData = activeConstructorOutput
+    ? {
+        ...activeConstructorOutput.candidate,
+        title: "Upload project candidate",
+        detail: `${activeConstructorOutput.activatedPanelSet.preset} voxel preset constructed from six active project panels`,
+        source: "project",
+      }
+    : benchmarkViewerData;
+  const validationReport = activeConstructorOutput?.candidate.validationReport ?? benchmarkReport;
+  const validationLanes = useMemo(() => createValidationLanes(validationReport), [validationReport]);
+  const readinessReport = useMemo(
+    () => createPanelReadinessDiagnosticReport({ readiness: project.readiness }),
+    [project.readiness],
+  );
+  const visibleDiagnosticReport = activeConstructorOutput?.diagnosticReport ?? readinessReport;
+
+  const handleResolutionChange = (resolution: GridTemplateSize) => {
+    dispatchUpload({ type: "resolutionChanged", resolution });
+  };
+
+  const handleSlotFileChange = async (slot: FaceSlot, file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    const request = createUploadRequest(uploads, slot, file.name);
+    dispatchUpload({ type: "uploadStarted", request });
+
+    const result = await processBrowserPanelAssetSource({
+      preset: request.preset,
+      source: file,
+      sourceLabel: request.fileName,
+      origin: { uploadSlotHint: request.slot, sourceName: request.fileName },
+      retryIntent: request.retryIntent,
+    });
+
+    dispatchUpload({ type: "uploadFinished", request, result });
+  };
 
   return (
     <main className="min-h-svh bg-background text-foreground">
@@ -75,7 +123,7 @@ function App() {
             </div>
             <div>
               <p className="text-sm font-semibold">Voxel Grid Workbench</p>
-              <p className="text-xs text-muted-foreground">browser-first experiment scaffold</p>
+              <p className="text-xs text-muted-foreground">browser-first voxel reconstruction experiment</p>
             </div>
           </div>
           <Button
@@ -86,7 +134,7 @@ function App() {
             onClick={() => setActiveAssetTab("uploads")}
           >
             <Upload className="size-4" aria-hidden="true" />
-            Upload Grid
+            Upload face images
           </Button>
         </header>
 
@@ -101,16 +149,17 @@ function App() {
                   Inspect constrained voxel candidates in 3D.
                 </h1>
                 <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-                  The first benchmark viewer renders the swirl sphere candidate with
-                  six projected surface panels, free orbit rotation, and gizmo-driven surface views.
+                  {activeConstructorOutput
+                    ? "The viewer is rendering the candidate attached to the active upload project."
+                    : "The viewer shows the swirl benchmark while the upload project waits for six compatible panels."}
                 </p>
               </div>
               <Badge variant="outline" className="font-normal">
-                preset 16
+                preset {activeConstructorOutput?.activatedPanelSet.preset ?? 16}
               </Badge>
             </div>
 
-            <VoxelViewer />
+            <VoxelViewer data={viewerData} />
           </section>
 
           <aside className="grid content-start gap-4">
@@ -143,23 +192,23 @@ function App() {
                 {activeAssetTab === "uploads" ? (
                   <UploadSlots
                     resolution={uploadResolution}
-                    uploadedSlotNames={uploadedSlotNames}
-                    onResolutionChange={setUploadResolution}
-                    onSlotFileChange={(slot, fileName) =>
-                      setUploadedSlotNames((current) => ({ ...current, [slot]: fileName }))
-                    }
+                    slots={uploadSlots}
+                    onResolutionChange={handleResolutionChange}
+                    onSlotFileChange={handleSlotFileChange}
                   />
                 ) : null}
               </CardContent>
             </Card>
 
+            <ProjectStatus project={project} report={visibleDiagnosticReport} />
+
             <Card>
               <CardHeader>
-                <CardTitle>Benchmark pipeline</CardTitle>
-                <CardDescription>Deterministic fixture through reconstruction</CardDescription>
+                <CardTitle>Project pipeline</CardTitle>
+                <CardDescription>One project-owned path from processed panels to viewer data</CardDescription>
                 <CardAction>
                   <Badge variant="outline" className="font-normal">
-                    benchmark
+                    {activeConstructorOutput ? "project output" : "waiting for panels"}
                   </Badge>
                 </CardAction>
               </CardHeader>
@@ -182,9 +231,14 @@ function App() {
               <CardHeader>
                 <CardTitle>Validation lanes</CardTitle>
                 <CardDescription>Geometry and appearance checks stay separate.</CardDescription>
+                <CardAction>
+                  <Badge variant="outline" className="font-normal">
+                    {activeConstructorOutput ? "project" : "benchmark fallback"}
+                  </Badge>
+                </CardAction>
               </CardHeader>
               <CardContent className="grid gap-3">
-                {lanes.map((item, index) => (
+                {validationLanes.map((item, index) => (
                   <div key={item.label}>
                     <div className="flex items-center justify-between gap-4">
                       <div className="grid gap-1">
@@ -196,7 +250,7 @@ function App() {
                         {item.passed ? "pass" : "review"}
                       </span>
                     </div>
-                    {index < lanes.length - 1 ? <Separator className="mt-3" /> : null}
+                    {index < validationLanes.length - 1 ? <Separator className="mt-3" /> : null}
                   </div>
                 ))}
               </CardContent>
@@ -213,6 +267,9 @@ export default App;
 function TemplateDownloads() {
   return (
     <div className="grid gap-3" data-testid="template-downloads-tab">
+      <p className="text-xs text-muted-foreground">
+        PNG templates use white gridlines on a transparent background. Paint occupied cells edge to edge, including the gridlines.
+      </p>
       {gridTemplateSizes.map((size) => (
         <TemplateDownloadItem key={size} size={size} />
       ))}
@@ -249,20 +306,20 @@ function TemplateDownloadItem({ size }: { size: GridTemplateSize }) {
 
 function UploadSlots({
   resolution,
-  uploadedSlotNames,
+  slots,
   onResolutionChange,
   onSlotFileChange,
 }: {
   resolution: GridTemplateSize;
-  uploadedSlotNames: Partial<Record<FaceSlot, string>>;
+  slots: Readonly<Record<FaceSlot, UploadSlotState>>;
   onResolutionChange: (resolution: GridTemplateSize) => void;
-  onSlotFileChange: (slot: FaceSlot, fileName: string) => void;
+  onSlotFileChange: (slot: FaceSlot, file: File | null) => void;
 }) {
   return (
     <div className="grid gap-4" data-testid="upload-slots-tab">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-medium">Configured resolution</span>
-        <div className="flex gap-1" role="group" aria-label="Upload slot resolution">
+        <span className="text-sm font-medium">Panel grid size</span>
+        <div className="flex gap-1" role="group" aria-label="Panel grid size">
           {gridTemplateSizes.map((size) => (
             <Button
               key={size}
@@ -283,8 +340,8 @@ function UploadSlots({
             key={slot}
             slot={slot}
             resolution={resolution}
-            fileName={uploadedSlotNames[slot]}
-            onFileNameChange={(fileName) => onSlotFileChange(slot, fileName)}
+            state={slots[slot]}
+            onFileChange={(file) => onSlotFileChange(slot, file)}
           />
         ))}
       </div>
@@ -295,22 +352,23 @@ function UploadSlots({
 function FileSlotPicker({
   slot,
   resolution,
-  fileName,
-  onFileNameChange,
+  state,
+  onFileChange,
 }: {
   slot: FaceSlot;
   resolution: GridTemplateSize;
-  fileName?: string;
-  onFileNameChange: (fileName: string) => void;
+  state: UploadSlotState;
+  onFileChange: (file: File | null) => void;
 }) {
-  const displayName = fileName || "Choose Image";
+  const displayName = state.fileName || "Choose Image";
+  const stateLabel = uploadSlotStateLabel(state, resolution);
 
   return (
     <label className="group/file-slot grid min-w-0 cursor-pointer gap-2 rounded-md border bg-background p-3 transition-colors hover:bg-muted/40 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
       <div className="flex min-w-0 items-center justify-between gap-2">
         <span className="min-w-0 truncate text-sm font-medium capitalize">{slot}</span>
-        <Badge variant="outline" className="font-normal">
-          {resolution} x {resolution}
+        <Badge variant={state.phase === "rejected" ? "destructive" : "outline"} className="font-normal">
+          {state.phase === "empty" ? `${resolution} x ${resolution}` : state.phase}
         </Badge>
       </div>
       <input
@@ -319,7 +377,11 @@ function FileSlotPicker({
         name={`${slot}-face-image`}
         accept="image/png,image/webp,image/jpeg"
         aria-label={`${slot} face image`}
-        onChange={(event) => onFileNameChange(event.currentTarget.files?.[0]?.name ?? "")}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0] ?? null;
+          event.currentTarget.value = "";
+          onFileChange(file);
+        }}
       />
       <span
         className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border bg-muted px-2 text-xs font-medium"
@@ -328,8 +390,144 @@ function FileSlotPicker({
         <Upload className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">{displayName}</span>
       </span>
+      <span
+        className="text-pretty text-xs text-muted-foreground"
+        data-testid={`upload-slot-status-${slot}`}
+        aria-live="polite"
+      >
+        {stateLabel}
+      </span>
     </label>
   );
+}
+
+function ProjectStatus({
+  project,
+  report,
+}: {
+  project: ActiveProjectState;
+  report: ConstructorDiagnosticReport;
+}) {
+  const summary = summarizeActiveProject(project);
+  const acceptedPanelCount = Object.keys(project.readiness.acceptedPanels).length;
+
+  return (
+    <Card data-testid="project-readiness">
+      <CardHeader>
+        <CardTitle>Active project</CardTitle>
+        <CardDescription>{acceptedPanelCount} of 6 compatible panels assigned</CardDescription>
+        <CardAction>
+          <Badge variant={project.readiness.status === "ready" ? "secondary" : "outline"} className="font-normal">
+            {projectStatusLabel(summary.status)}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <span>{project.savedPanelAssets.length} saved assets</span>
+          <span>·</span>
+          <span>{project.activeAssignments.length} active assignments</span>
+          <span>·</span>
+          <span>constructor: {constructorStatusLabel(summary.constructorStatus)}</span>
+        </div>
+        {report.findings.length > 0 ? (
+          <ul className="grid gap-2" data-testid="project-diagnostics">
+            {report.findings.map((finding) => (
+              <li key={finding.id} className="rounded-md border bg-background p-2 text-xs">
+                <span className="font-medium">{finding.message}</span>
+                <span className="mt-1 block text-muted-foreground">
+                  Repair in: {diagnosticOwnerLabel(finding.sourceOwner)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground" data-testid="project-diagnostics">
+            Constructor diagnostics report no findings. Candidate status: {report.status}.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function projectStatusLabel(status: ActiveProjectLifecycleStatus): string {
+  switch (status) {
+    case "empty":
+      return "empty";
+    case "assets-present":
+      return "assets saved";
+    case "assignments-incomplete":
+      return "panels incomplete";
+    case "constructor-ready":
+      return "ready to construct";
+    case "constructor-stale":
+      return "output stale";
+    case "constructor-attached":
+      return "output attached";
+  }
+}
+
+function constructorStatusLabel(status: ConstructorOutputStatus | "not-run"): string {
+  return status === "not-run" ? "not run" : status;
+}
+
+function diagnosticOwnerLabel(owner: ConstructorDiagnosticSourceOwner): string {
+  switch (owner) {
+    case "activeProjectState":
+      return "active project";
+    case "panelContracts":
+      return "panel assignments";
+    case "assetProcessing":
+      return "image processing";
+    case "modelConstruction":
+      return "voxel construction";
+    case "candidateResolver":
+      return "candidate resolution";
+    case "voxelViewer":
+      return "voxel viewer";
+    case "projectSaveLoad":
+      return "project save/load";
+  }
+}
+
+function uploadSlotStateLabel(state: UploadSlotState, configuredPreset: GridTemplateSize): string {
+  switch (state.phase) {
+    case "empty":
+      return "No source selected.";
+    case "pending":
+      return `Processing ${state.fileName} at ${configuredPreset} x ${configuredPreset}.`;
+    case "replacing":
+      return `Replacing the active panel with ${state.fileName}. Constructor output is stale.`;
+    case "accepted":
+      return `${state.fileName} accepted at ${state.processedPreset} x ${state.processedPreset}.`;
+    case "rejected":
+      return state.diagnostics[0]?.message ?? `${state.fileName} was rejected.`;
+  }
+}
+
+function createValidationLanes(report: ValidationReport) {
+  return [
+    {
+      label: "Silhouette consistency",
+      passed: report.geometry.silhouetteMismatches.length === 0,
+      detail: `${report.geometry.silhouetteMismatches.length} silhouette mismatches`,
+    },
+    {
+      label: "Connected watertight volume",
+      passed: report.geometry.connected && report.geometry.watertight,
+      detail: report.geometry.connected && report.geometry.watertight
+        ? "connected and watertight"
+        : "geometry needs review",
+    },
+    {
+      label: "Surface color agreement",
+      passed: report.color.coherent,
+      detail: report.color.coherent
+        ? "surface colors match projected panels"
+        : `${report.color.mismatches.length} surface color mismatches`,
+    },
+  ] as const;
 }
 
 function SquareGridPreview({ size }: { size: GridTemplateSize }) {
